@@ -1,0 +1,49 @@
+# Blueprint do Render: Cron Job a cada 5 minutos + Postgres para o snapshot, o histórico e os logs.
+# No painel: New > Blueprint > selecione o repositório. As variáveis com sync: false são pedidas na criação.
+services:
+  - type: cron
+    name: notifica-precos
+    runtime: python
+    region: virginia
+    plan: starter
+    schedule: "*/5 * * * *"
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: TZ
+        value: America/Belem
+      - key: DATABASE_URL
+        fromDatabase:
+          name: notifica-precos-db
+          property: connectionString
+      - key: SANKHYA_BASE_URL
+        value: https://api.sankhya.com.br
+      - key: SANKHYA_CLIENT_ID
+        sync: false
+      - key: SANKHYA_CLIENT_SECRET
+        sync: false
+      - key: SANKHYA_X_TOKEN
+        sync: false
+      - key: SANKHYA_CODTABS
+        sync: false
+      - key: WHATSAPP_TOKEN
+        sync: false
+      - key: WHATSAPP_PHONE_NUMBER_ID
+        sync: false
+      - key: WHATSAPP_GROUP_ID
+        sync: false
+      - key: WHATSAPP_API_VERSION
+        value: v26.0
+      - key: MAX_ITENS_MENSAGEM
+        value: "50"
+      - key: LOG_DIAS_RETENCAO
+        value: "90"
+
+databases:
+  - name: notifica-precos-db
+    plan: basic-256mb
+    region: virginia
+    databaseName: notifica_precos
+    user: notifica_precos
