@@ -16,6 +16,8 @@ log = logging.getLogger(__name__)
 
 CHAVE_LISTA = "email_destinatarios"
 CHAVE_OFFSET = "telegram_offset"
+# /adicionar ou /remover enviado sem e-mail: a próxima mensagem do chat é o e-mail.
+CHAVE_PENDENTE = "telegram_comando_pendente"
 
 EMAIL_VALIDO = re.compile(r"^[^@\s,;<>]+@[^@\s,;<>]+\.[^@\s,;<>]+$")
 
@@ -23,6 +25,7 @@ AJUDA = "\n".join([
     "<b>Destinatários do e-mail de preços</b>",
     "/emails — mostra a lista",
     "/adicionar joao maria@empresa.com — inclui (só o usuário usa o domínio padrão)",
+    "Sem o e-mail, o bot pergunta e a próxima mensagem é a resposta.",
     "/remover joao — tira da lista",
     "As mudanças valem a partir do próximo ciclo (até 10 min).",
 ])
@@ -63,9 +66,6 @@ def _executar(banco: Banco, config: Config, texto: str) -> str:
         return _mostrar(emails)
     if comando not in ("/adicionar", "/remover"):
         return AJUDA
-    if not argumentos:
-        return f"Informe o e-mail. Ex.: {comando} joao"
-
     validos = [(a, _normalizar(a, config.email_dominio)) for a in argumentos]
     invalidos = [a for a, e in validos if e is None]
     alvos = [e for _, e in validos if e]
@@ -100,6 +100,18 @@ def processar_comandos(banco: Banco, config: Config) -> None:
         if str(msg.get("chat", {}).get("id")) != config.telegram_chat_id:
             log.warning("Comando do Telegram ignorado: chat %s não autorizado", msg.get("chat", {}).get("id"))
             continue
-        if not texto.startswith("/"):
+        partes = texto.split()
+        comando = partes[0].split("@")[0].lower() if partes else ""
+        if comando in ("/adicionar", "/remover") and len(partes) == 1:
+            banco.definir_estado(CHAVE_PENDENTE, comando)
+            pergunta = "adicionar" if comando == "/adicionar" else "remover"
+            telegram.enviar(config, f"Qual e-mail {pergunta}? (pode mandar vários)", pedir_resposta=True)
             continue
+        pendente = banco.obter_estado(CHAVE_PENDENTE)
+        if pendente:
+            banco.definir_estado(CHAVE_PENDENTE, "")
+        if not texto.startswith("/"):
+            if not pendente:
+                continue
+            texto = f"{pendente} {texto}"
         telegram.enviar(config, _executar(banco, config, texto))

@@ -84,6 +84,8 @@ As variáveis marcadas como `sync: false` no `render.yaml` não têm valor no re
 - `/adicionar joao ana@fornecedor.com.br`: inclui (basta o usuário para o domínio padrão)
 - `/remover joao`: tira da lista
 
+Tocar no comando pelo menu envia sem o e-mail; nesse caso o bot pergunta "Qual e-mail?" e a próxima mensagem é a resposta.
+
 O Cron Job lê os comandos no início de cada execução e responde no chat, então a mudança vale em até 10 minutos. A lista fica no banco (tabela `estado`, chave `email_destinatarios`). `EMAIL_DESTINATARIOS` só é usada enquanto ninguém mexeu na lista pelo Telegram; depois disso, editar a variável não muda mais nada.
 
 ### Senha de app do Google Workspace

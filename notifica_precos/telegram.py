@@ -16,18 +16,22 @@ TIMEOUT = 15
 LIMITE_TEXTO = 4096
 
 
-def enviar(config: Config, texto: str) -> bool:
+def enviar(config: Config, texto: str, pedir_resposta: bool = False) -> bool:
+    """`pedir_resposta` abre o campo de resposta no Telegram (ForceReply), para quando o bot faz uma pergunta."""
     if not config.telegram_configurado:
         return False
+    corpo = {
+        "chat_id": config.telegram_chat_id,
+        "text": texto[:LIMITE_TEXTO],
+        "parse_mode": "HTML",
+        "disable_web_page_preview": True,
+    }
+    if pedir_resposta:
+        corpo["reply_markup"] = {"force_reply": True, "input_field_placeholder": "joao ou ana@fornecedor.com.br"}
     try:
         resp = requests.post(
             f"https://api.telegram.org/bot{config.telegram_bot_token}/sendMessage",
-            json={
-                "chat_id": config.telegram_chat_id,
-                "text": texto[:LIMITE_TEXTO],
-                "parse_mode": "HTML",
-                "disable_web_page_preview": True,
-            },
+            json=corpo,
             timeout=TIMEOUT,
         )
         if resp.status_code != 200:
