@@ -55,15 +55,17 @@ def mensagens_recebidas(config: Config, offset: int) -> list[dict]:
 
 
 def definir_comandos(config: Config, comandos: list[tuple[str, str]]) -> None:
-    """Substitui o menu de comandos do bot. Grava também nos escopos de grupo e privado, que têm
-    precedência sobre o padrão quando definidos (ex.: pelo BotFather)."""
-    lista = [{"command": c, "description": d} for c, d in comandos]
-    for escopo in ("default", "all_group_chats", "all_private_chats"):
-        resp = requests.post(
-            f"https://api.telegram.org/bot{config.telegram_bot_token}/setMyCommands",
-            json={"commands": lista, "scope": {"type": escopo}},
-            timeout=TIMEOUT,
-        )
+    """Menu de comandos só nas conversas diretas com o bot; tira dos grupos e do escopo padrão."""
+    url = f"https://api.telegram.org/bot{config.telegram_bot_token}"
+    resp = requests.post(
+        f"{url}/setMyCommands",
+        json={"commands": [{"command": c, "description": d} for c, d in comandos],
+              "scope": {"type": "all_private_chats"}},
+        timeout=TIMEOUT,
+    )
+    resp.raise_for_status()
+    for escopo in ("default", "all_group_chats"):
+        resp = requests.post(f"{url}/deleteMyCommands", json={"scope": {"type": escopo}}, timeout=TIMEOUT)
         resp.raise_for_status()
 
 

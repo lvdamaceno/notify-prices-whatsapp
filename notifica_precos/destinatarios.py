@@ -1,7 +1,7 @@
 """Lista de quem recebe o e-mail de preços, guardada no banco e controlada por comandos no Telegram.
 
 Na primeira vez a lista vem de EMAIL_DESTINATARIOS; depois disso vale só a do banco.
-Só mensagens do TELEGRAM_CHAT_ID são aceitas; qualquer outro chat é ignorado.
+Só a conversa direta (privada) com o bot, no TELEGRAM_CHAT_ID, é aceita; grupos e outros chats são ignorados.
 """
 
 import logging
@@ -44,6 +44,8 @@ AJUDA = "\n".join([
 def lista(banco: Banco, config: Config) -> list[str]:
     salva = banco.obter_estado(CHAVE_LISTA)
     if salva is None:
+        # Primeira execução: grava a lista de EMAIL_DESTINATARIOS, que daí em diante pode ser removida.
+        _gravar(banco, list(config.email_destinatarios))
         return list(config.email_destinatarios)
     return [e for e in salva.split(",") if e]
 
@@ -107,8 +109,9 @@ def processar_comandos(banco: Banco, config: Config) -> None:
         banco.definir_estado(CHAVE_OFFSET, str(update["update_id"] + 1))
         msg = update.get("message") or {}
         texto = msg.get("text", "")
-        if str(msg.get("chat", {}).get("id")) != config.telegram_chat_id:
-            log.warning("Comando do Telegram ignorado: chat %s não autorizado", msg.get("chat", {}).get("id"))
+        chat = msg.get("chat", {})
+        if chat.get("type") != "private" or str(chat.get("id")) != config.telegram_chat_id:
+            log.warning("Comando do Telegram ignorado: chat %s (%s) não autorizado", chat.get("id"), chat.get("type"))
             continue
         partes = texto.split()
         comando = partes[0].split("@")[0].lower() if partes else ""
