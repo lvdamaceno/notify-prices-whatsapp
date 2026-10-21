@@ -14,7 +14,7 @@ import signal
 import sys
 import time
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from notifica_precos import config as cfg
 from notifica_precos import envio_email, logs, mensagem, telegram
@@ -60,11 +60,14 @@ def motivo_carga_completa(config: cfg.Config, snapshot: Snapshot, forcar: bool) 
         return PRIMEIRA_CARGA
     if config.render_git_commit and config.render_git_commit != snapshot.estado("ultimo_commit"):
         return f"novo deploy ({config.render_git_commit[:7]})"
-    ultima = snapshot.estado("ultima_carga_completa")
-    if config.carga_completa_horas and (
-        not ultima or datetime.now() - datetime.fromisoformat(ultima) >= timedelta(hours=config.carga_completa_horas)
-    ):
-        return f"reconciliação periódica ({config.carga_completa_horas}h)"
+    if config.carga_completa_hora is not None:
+        # Uma vez por dia, na primeira execução a partir do horário fixo (fuso de TZ). Se um deploy
+        # já fez uma carga completa depois desse horário hoje, não repete.
+        agora = datetime.now()
+        horario = agora.replace(hour=config.carga_completa_hora, minute=0, second=0, microsecond=0)
+        ultima = snapshot.estado("ultima_carga_completa")
+        if agora >= horario and (not ultima or datetime.fromisoformat(ultima) < horario):
+            return f"reconciliação diária ({config.carga_completa_hora}h)"
     return None
 
 

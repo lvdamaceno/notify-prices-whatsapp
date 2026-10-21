@@ -41,6 +41,16 @@ def _destinatarios(valor: str, dominio: str) -> list[str]:
     return emails
 
 
+def _hora(valor: str) -> int | None:
+    valor = valor.strip()
+    if not valor:
+        return None
+    hora = int(valor)
+    if not 0 <= hora <= 23:
+        raise RuntimeError(f"CARGA_COMPLETA_HORA deve estar entre 0 e 23 (recebido: {hora})")
+    return hora
+
+
 def _codtabs(valor: str) -> list[int]:
     # Só aceita números, para o valor poder ir direto no SQL sem risco de injeção.
     return [int(v) for v in valor.replace(" ", "").split(",") if v]
@@ -74,7 +84,7 @@ class Config:
 
     intervalo_minutos: int
     max_itens_email: int
-    carga_completa_horas: int
+    carga_completa_hora: int | None
     copia_completa_min_itens: int
     carga_lote_produtos: int
     log_dias_retencao: int
@@ -119,7 +129,8 @@ def carregar() -> Config:
         render_servico=os.getenv("RENDER_SERVICE_NAME", "").strip(),
         intervalo_minutos=int(os.getenv("INTERVALO_MINUTOS", "10")),
         max_itens_email=int(os.getenv("MAX_ITENS_EMAIL", "500")),
-        carga_completa_horas=int(os.getenv("CARGA_COMPLETA_HORAS", "24")),
+        # Hora fixa (0-23) da reconciliação diária; vazio desliga (fica só nos deploys).
+        carga_completa_hora=_hora(os.getenv("CARGA_COMPLETA_HORA", "6")),
         # Itens mínimos para uma versão contar como cópia completa; 0 = 10% dos produtos ativos.
         copia_completa_min_itens=int(os.getenv("COPIA_COMPLETA_MIN_ITENS", "0")),
         # Produtos por consulta na primeira carga (máximo 1000, limite do IN no Oracle).

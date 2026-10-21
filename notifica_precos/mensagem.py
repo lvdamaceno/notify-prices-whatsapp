@@ -153,7 +153,8 @@ def deploy(config, precos: int | None, alteracoes: int | None, erro: BaseExcepti
         ("Commit", commit),
         ("Tabelas monitoradas", ", ".join(map(str, config.sankhya_codtabs)) or "todas"),
         ("Destinatários de preços", ", ".join(config.email_destinatarios) or "nenhum (só log)"),
-        ("Reconciliação completa", f"a cada {config.carga_completa_horas}h" if config.carga_completa_horas else "só em deploy"),
+        ("Reconciliação completa", f"todo dia às {config.carga_completa_hora}h"
+         if config.carga_completa_hora is not None else "só em deploy"),
         ("Telegram", "ativo" if config.telegram_configurado else "não configurado"),
     ]
 

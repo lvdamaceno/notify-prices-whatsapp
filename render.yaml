@@ -48,8 +48,8 @@ services:
         sync: false
       - key: MAX_ITENS_EMAIL
         value: "500"
-      - key: CARGA_COMPLETA_HORAS
-        value: "24"
+      - key: CARGA_COMPLETA_HORA
+        value: "6"
       - key: LOG_DIAS_RETENCAO
         value: "90"
 

@@ -19,7 +19,7 @@ No Sankhya a tabela de preço (sempre a `CODTAB` 0) é **recriada a cada atualiz
 
 Ela roda:
 - a cada **deploy** no Render (detectado pelo `RENDER_GIT_COMMIT`);
-- a cada `CARGA_COMPLETA_HORAS` (padrão 24h), para pegar edições feitas direto numa versão que já existia;
+- todo dia às `CARGA_COMPLETA_HORA` (padrão 6h, no fuso de `TZ`), na primeira execução do cron a partir desse horário, para pegar edições feitas direto numa versão que já existia. Se um deploy já fez uma carga completa depois desse horário no mesmo dia, ela não se repete;
 - sob demanda, com `python main.py --carga-completa`.
 
 **Incremental**, a cada 10 minutos:
@@ -75,7 +75,7 @@ As tabelas são criadas automaticamente:
 | `CARGA_LOTE_PRODUTOS` | Opcional | Produtos por consulta na primeira carga. Padrão `500`, máximo `1000` |
 | `SANKHYA_TIMEOUT` | Opcional | Segundos de espera por consulta ao Sankhya. Padrão `120` |
 | `COPIA_COMPLETA_MIN_ITENS` | Opcional | Itens mínimos para uma versão contar como cópia completa. Padrão `0` = 10% dos produtos ativos |
-| `CARGA_COMPLETA_HORAS` | `render.yaml` | Intervalo da reconciliação completa. Padrão `24`; `0` desliga (fica só no deploy) |
+| `CARGA_COMPLETA_HORA` | `render.yaml` | Hora fixa (0-23) da reconciliação diária. Padrão `6`; vazio desliga (fica só no deploy) |
 | `LOG_DIAS_RETENCAO` | `render.yaml` | Padrão `90` |
 
 As variáveis marcadas como `sync: false` no `render.yaml` não têm valor no repositório. Os destinatários e as credenciais existem só no painel do Render, em **notifica-precos → Environment**. Para incluir ou tirar alguém da lista, edite `EMAIL_DESTINATARIOS` ali; não precisa mexer no código. A próxima execução do Cron Job já usa a lista nova.
