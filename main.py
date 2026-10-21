@@ -297,6 +297,27 @@ def _num(n: int) -> str:
     return f"{n:,}".replace(",", ".")
 
 
+def _maiuscula(texto: str) -> str:
+    # Só a primeira letra: str.capitalize deixaria o resto minúsculo (EMAIL_DEPLOY viraria email_deploy).
+    return texto[:1].upper() + texto[1:]
+
+
+def _envio(config: cfg.Config, enviado: bool) -> str:
+    if enviado:
+        return f"e-mail enviado para {len(config.email_destinatarios)} destinatário(s)"
+    return "⚠️ e-mail não configurado, só no log"
+
+
+def _linhas_promocoes(config: cfg.Config, resumo: Resumo) -> list[str]:
+    linhas = []
+    if resumo.promocoes:
+        linhas += [f"🏷 {_num(resumo.promocoes)} mudança(s) de promoção",
+                   f"Promoções: {_envio(config, resumo.promocoes_email)}"]
+    if resumo.promocoes_carregadas:
+        linhas.append(f"🏷 {_num(resumo.promocoes_carregadas)} preço(s) em promoção gravados (primeira leitura, sem e-mail)")
+    return linhas
+
+
 def avisar_sucesso(config: cfg.Config, snapshot: Snapshot, resumo: Resumo, segundos: float) -> None:
     erro_anterior = snapshot.estado("erro_ativo")
     if erro_anterior:
@@ -305,35 +326,23 @@ def avisar_sucesso(config: cfg.Config, snapshot: Snapshot, resumo: Resumo, segun
     if not resumo.relevante:
         return
 
-    def envio(enviado: bool) -> str:
-        if enviado:
-            return f"e-mail enviado para {len(config.email_destinatarios)} destinatário(s)"
-        return "⚠️ e-mail não configurado, só no log"
-
     linhas = []
     if resumo.completa:
         linhas = [
             telegram.titulo("🔄", "carga completa"),
             f"Motivo: {resumo.detalhe}",
             f"{_num(resumo.precos)} preços vigentes · {_num(resumo.alteracoes)} alteração(ões)",
-            (envio(resumo.email_enviado) if resumo.alteracoes else "nenhum e-mail necessário").capitalize(),
+            _maiuscula(_envio(config, resumo.email_enviado) if resumo.alteracoes else "nenhum e-mail necessário"),
         ]
     elif resumo.alteracoes:
         linhas = [
             telegram.titulo("✅", f"{_num(resumo.alteracoes)} preço(s) alterado(s)"),
             f"Versão nova da tabela: {resumo.detalhe}",
-            envio(resumo.email_enviado).capitalize(),
+            _maiuscula(_envio(config, resumo.email_enviado)),
         ]
-    if resumo.promocoes:
-        if not linhas:
-            linhas = [telegram.titulo("🏷", f"{_num(resumo.promocoes)} mudança(s) de promoção")]
-        else:
-            linhas.append(f"🏷 {_num(resumo.promocoes)} mudança(s) de promoção")
-        linhas.append(f"Promoções: {envio(resumo.promocoes_email)}")
-    if resumo.promocoes_carregadas:
-        if not linhas:
-            linhas = [telegram.titulo("🏷", "promoções carregadas")]
-        linhas.append(f"🏷 {_num(resumo.promocoes_carregadas)} preço(s) em promoção gravados (primeira leitura, sem e-mail)")
+    if not linhas:
+        linhas = [telegram.titulo("🏷", "promoções")]
+    linhas += _linhas_promocoes(config, resumo)
     linhas.append(f"⏱ {segundos:.1f}s".replace(".", ","))
     telegram.enviar(config, "\n".join(linhas))
 
@@ -388,8 +397,9 @@ def avisar_deploy(
         corpo = [
             telegram.titulo("🚀", f"deploy {config.render_git_commit[:7]}"),
             f"Carga completa: {_num(resumo.precos)} preços vigentes · {_num(resumo.alteracoes)} alteração(ões)",
+            *_linhas_promocoes(config, resumo),
         ]
-    telegram.enviar(config, "\n".join(corpo + [situacao_email.capitalize(), f"⏱ {segundos:.1f}s".replace(".", ",")]))
+    telegram.enviar(config, "\n".join(corpo + [_maiuscula(situacao_email), f"⏱ {segundos:.1f}s".replace(".", ",")]))
 
     snapshot.banco.definir_estado("deploy_avisado", config.render_git_commit)
     # O aviso de deploy já cobre o erro (ou a recuperação): ajusta o controle de erros repetidos.
