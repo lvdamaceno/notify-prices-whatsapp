@@ -10,7 +10,6 @@ from .config import RAIZ, Config
 log = logging.getLogger(__name__)
 
 TAMANHO_PAGINA = 4000
-TIMEOUT = 60
 
 
 class SankhyaErro(RuntimeError):
@@ -36,7 +35,7 @@ class Sankhya:
                 "client_secret": self.config.sankhya_client_secret,
                 "grant_type": "client_credentials",
             },
-            timeout=TIMEOUT,
+            timeout=self.config.sankhya_timeout,
         )
         if resp.status_code != 200:
             raise SankhyaErro(f"Falha na autenticação ({resp.status_code}): {resp.text[:500]}")
@@ -53,7 +52,7 @@ class Sankhya:
             params={"serviceName": "DbExplorerSP.executeQuery", "outputType": "json"},
             headers={"Authorization": f"Bearer {self._autenticar()}"},
             json={"serviceName": "DbExplorerSP.executeQuery", "requestBody": {"sql": sql}},
-            timeout=TIMEOUT,
+            timeout=self.config.sankhya_timeout,
         )
         if resp.status_code == 401:
             # Token invalidado antes do previsto: força nova autenticação na próxima chamada.
@@ -71,8 +70,11 @@ class Sankhya:
         colunas = [c["name"] for c in corpo.get("fieldsMetadata", [])]
         return colunas, corpo.get("rows", [])
 
-    def consultar(self, sql: str) -> list[dict]:
+    def consultar(self, sql: str, paginar: bool = True) -> list[dict]:
         """Executa o SQL paginando com OFFSET/FETCH até a última página."""
+        if not paginar:  # resultados pequenos (contagens), sem ORDER BY
+            colunas, linhas = self._executar_sql(sql)
+            return [dict(zip(colunas, linha)) for linha in linhas]
         registros: list[dict] = []
         offset = 0
         while True:
@@ -83,7 +85,7 @@ class Sankhya:
                 return registros
             offset += TAMANHO_PAGINA
 
-    def _sql(self, arquivo: str, **valores: int) -> str:
+    def _sql(self, arquivo: str, **valores: int | list[int]) -> str:
         sql = (RAIZ / "sql" / arquivo).read_text(encoding="utf-8")
         # Remove os comentários de linha para não atrapalhar a cláusula de paginação.
         sql = "\n".join(l for l in sql.splitlines() if not l.strip().startswith("--"))
@@ -91,13 +93,27 @@ class Sankhya:
         if self.config.sankhya_codtabs:
             filtro = f"AND TAB.CODTAB IN ({', '.join(map(str, self.config.sankhya_codtabs))})"
         sql = sql.replace("{filtro_tabelas}", filtro)
+        # Só números entram no SQL (int() rejeita qualquer outra coisa), sem risco de injeção.
         for nome, valor in valores.items():
-            sql = sql.replace("{" + nome + "}", str(int(valor)))
+            texto = ", ".join(str(int(v)) for v in valor) if isinstance(valor, list) else str(int(valor))
+            sql = sql.replace("{" + nome + "}", texto)
         return sql.strip()
 
-    def precos_vigentes(self) -> list[dict]:
-        """Preço vigente de todos os produtos (carga completa)."""
-        return self.consultar(self._sql("precos_vigentes.sql"))
+    def codigos_produtos(self) -> list[int]:
+        """Códigos de todos os produtos ativos, em ordem."""
+        return [int(r["CODPROD"]) for r in self.consultar(self._sql("codigos_produtos.sql"))]
+
+    def precos_produtos(self, codprods: list[int]) -> list[dict]:
+        """Preço vigente de um lote de produtos (primeira carga)."""
+        return self.consultar(self._sql("precos_produtos.sql", codprods=codprods))
+
+    def produtos_ativos(self) -> int:
+        return int(self.consultar(self._sql("produtos_ativos.sql"), paginar=False)[0]["QTD"])
+
+    def copias_completas(self, nutabs: list[int], limite: int) -> dict[int, int]:
+        """Das versões informadas, as que têm pelo menos `limite` itens: {NUTAB: quantidade}."""
+        linhas = self.consultar(self._sql("copias_completas.sql", nutabs=nutabs, limite=limite))
+        return {int(l["NUTAB"]): int(l["QTD"]) for l in linhas}
 
     def versoes_tabela(self) -> list[dict]:
         """Versões (NUTAB) já em vigor das tabelas monitoradas."""

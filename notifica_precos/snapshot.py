@@ -111,7 +111,8 @@ def _diferenca(anteriores: dict[Chave, Preco], novos: dict[Chave, Preco]) -> Dif
 
 
 def comparar_completo(anteriores: dict[Chave, Preco], atuais: dict[Chave, Preco]) -> Diferenca:
-    """Carga completa: a foto nova substitui a anterior; o que sumiu é removido."""
+    """Carga completa: compara a foto nova com a anterior. O que não veio fica em `removidos`
+    só para informação; a carga completa mantém esses itens no banco (ver main.carga_completa)."""
     dif = _diferenca(anteriores, atuais)
     dif.removidos = list(anteriores.keys() - atuais.keys())
     return dif

@@ -53,6 +53,7 @@ class Config:
     sankhya_client_secret: str
     sankhya_x_token: str
     sankhya_codtabs: list[int]
+    sankhya_timeout: int
 
     smtp_host: str
     smtp_porta: int
@@ -74,6 +75,8 @@ class Config:
     intervalo_minutos: int
     max_itens_email: int
     carga_completa_horas: int
+    copia_completa_min_itens: int
+    carga_lote_produtos: int
     log_dias_retencao: int
 
     @property
@@ -95,6 +98,8 @@ def carregar() -> Config:
         sankhya_client_secret=_obrigatoria("SANKHYA_CLIENT_SECRET"),
         sankhya_x_token=_obrigatoria("SANKHYA_X_TOKEN"),
         sankhya_codtabs=_codtabs(os.getenv("SANKHYA_CODTABS", "")),
+        # Segundos de espera por resposta de cada consulta ao Sankhya.
+        sankhya_timeout=int(os.getenv("SANKHYA_TIMEOUT", "120")),
         smtp_host=os.getenv("SMTP_HOST", "").strip(),
         smtp_porta=int(os.getenv("SMTP_PORTA", "587")),
         smtp_usuario=smtp_usuario,
@@ -115,5 +120,9 @@ def carregar() -> Config:
         intervalo_minutos=int(os.getenv("INTERVALO_MINUTOS", "5")),
         max_itens_email=int(os.getenv("MAX_ITENS_EMAIL", "500")),
         carga_completa_horas=int(os.getenv("CARGA_COMPLETA_HORAS", "24")),
+        # Itens mínimos para uma versão contar como cópia completa; 0 = 10% dos produtos ativos.
+        copia_completa_min_itens=int(os.getenv("COPIA_COMPLETA_MIN_ITENS", "0")),
+        # Produtos por consulta na primeira carga (máximo 1000, limite do IN no Oracle).
+        carga_lote_produtos=min(1000, int(os.getenv("CARGA_LOTE_PRODUTOS", "500"))),
         log_dias_retencao=int(os.getenv("LOG_DIAS_RETENCAO", "90")),
     )

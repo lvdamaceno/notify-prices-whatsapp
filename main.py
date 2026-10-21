@@ -9,7 +9,6 @@ Uso:
 """
 
 import argparse
-import fcntl
 import logging
 import signal
 import sys
@@ -22,13 +21,20 @@ from notifica_precos import envio_email, logs, mensagem, telegram
 from notifica_precos.banco import Banco
 from notifica_precos.sankhya import Sankhya
 from notifica_precos.snapshot import (
-    Diferenca, Snapshot, aplicar_versoes, comparar_completo, de_registro, versao_de_registro,
+    Chave, Diferenca, Preco, Snapshot, Versao, aplicar_versoes, comparar_completo, de_registro, versao_de_registro,
 )
 
 log = logging.getLogger("notifica_precos")
 
 # Acima disso, as alterações não são logadas uma a uma (ficam na tabela historico e no CSV).
 MAX_ALTERACOES_NO_LOG = 200
+
+# Uma versão com pelo menos essa fração dos produtos ativos é tratada como cópia completa da tabela.
+FRACAO_COPIA_COMPLETA = 0.1
+# Quantas versões são contadas por consulta ao procurar a cópia completa mais recente.
+LOTE_VERSOES = 20
+
+PRIMEIRA_CARGA = "primeira carga"
 
 _parar = False
 
@@ -50,8 +56,8 @@ class Resumo:
 def motivo_carga_completa(config: cfg.Config, snapshot: Snapshot, forcar: bool) -> str | None:
     if forcar:
         return "solicitada (--carga-completa)"
-    if snapshot.vazio():
-        return "primeira carga"
+    if snapshot.estado("carga_inicial_concluida") != "1":
+        return PRIMEIRA_CARGA
     if config.render_git_commit and config.render_git_commit != snapshot.estado("ultimo_commit"):
         return f"novo deploy ({config.render_git_commit[:7]})"
     ultima = snapshot.estado("ultima_carga_completa")
@@ -92,27 +98,109 @@ def notificar(config: cfg.Config, dif: Diferenca, origem: str) -> bool:
     return True
 
 
+def precos_vigentes(config: cfg.Config, sankhya: Sankhya, versoes: list[Versao]) -> dict[Chave, Preco]:
+    """Preço vigente de todos os produtos sem varrer o histórico da TGFEXC.
+
+    A tabela é recriada a cada atualização, e a cópia completa mais recente já traz todos os
+    produtos. Então basta partir dela e sobrepor as versões parciais que vieram depois.
+    """
+    limite = config.copia_completa_min_itens or max(1, int(sankhya.produtos_ativos() * FRACAO_COPIA_COMPLETA))
+    atuais: dict[Chave, Preco] = {}
+    for codtab in sorted({v.codtab for v in versoes}):
+        da_tabela = sorted((v for v in versoes if v.codtab == codtab), key=lambda v: (v.dtvigor, v.nutab), reverse=True)
+
+        base = None
+        for i in range(0, len(da_tabela), LOTE_VERSOES):
+            lote = da_tabela[i:i + LOTE_VERSOES]  # da mais nova para a mais antiga
+            completas = sankhya.copias_completas([v.nutab for v in lote], limite)
+            base = next((v for v in lote if v.nutab in completas), None)
+            if base:
+                break
+
+        # Sem nenhuma cópia completa, todas as versões são parciais (pequenas) e são aplicadas.
+        aplicar = da_tabela[:da_tabela.index(base) + 1] if base else da_tabela
+        lidas = [(v, [de_registro(r) for r in sankhya.precos_versao(v.nutab)]) for v in aplicar]
+        atuais.update({p.chave: p for p in aplicar_versoes({}, lidas).gravar})
+        log.info(
+            "Tabela %d: base %s + %d versão(ões) posterior(es) (cópia completa = %d+ itens)",
+            codtab, f"NUTAB {base.nutab} de {base.dtvigor}" if base else "nenhuma cópia completa",
+            len(aplicar) - (1 if base else 0), limite,
+        )
+    return atuais
+
+
+def _duracao(segundos: float) -> str:
+    minutos, seg = divmod(int(segundos), 60)
+    horas, minutos = divmod(minutos, 60)
+    return f"{horas}h{minutos:02d}m" if horas else f"{minutos}m{seg:02d}s"
+
+
+def carga_inicial(config: cfg.Config, sankhya: Sankhya, snapshot: Snapshot) -> Resumo:
+    """Primeira carga produto a produto (em lotes), para garantir que nenhum produto fique de fora.
+
+    Cada lote é salvo junto com o último CODPROD concluído: se a execução cair no meio,
+    a próxima continua dali em vez de recomeçar.
+    """
+    # Versões lidas antes dos preços: uma versão criada durante a carga não é marcada como
+    # processada e é reaplicada no próximo ciclo (sem efeito se os preços já estiverem iguais).
+    versoes = [versao_de_registro(r) for r in sankhya.versoes_tabela()]
+    codigos = sankhya.codigos_produtos()
+    ate = int(snapshot.estado("carga_inicial_ate") or 0)
+    pendentes = [c for c in codigos if c > ate]
+    tamanho = config.carga_lote_produtos
+    lotes = [pendentes[i:i + tamanho] for i in range(0, len(pendentes), tamanho)]
+    feitos_antes = len(codigos) - len(pendentes)
+
+    if ate:
+        log.info("Primeira carga: retomando após o produto %d (%d de %d já processados)", ate, feitos_antes, len(codigos))
+    else:
+        log.info("Primeira carga: %d produtos ativos em %d lote(s) de até %d", len(codigos), len(lotes), tamanho)
+
+    inicio = time.monotonic()
+    feitos = 0
+    for n, lote in enumerate(lotes, 1):
+        precos = {p.chave: p for p in map(de_registro, sankhya.precos_produtos(lote))}
+        snapshot.salvar(Diferenca(gravar=list(precos.values())), notificado=False,
+                        estado={"carga_inicial_ate": str(lote[-1])})
+        feitos += len(lote)
+        decorrido = time.monotonic() - inicio
+        restante = decorrido / feitos * (len(pendentes) - feitos)
+        log.info(
+            "Primeira carga: lote %d/%d · produtos %d a %d · %d preço(s) · %d/%d produtos (%.1f%%) · %s decorridos · ~%s restantes",
+            n, len(lotes), lote[0], lote[-1], len(precos), feitos_antes + feitos, len(codigos),
+            (feitos_antes + feitos) / len(codigos) * 100, _duracao(decorrido), _duracao(restante),
+        )
+
+    estado = {"carga_inicial_concluida": "1", "ultima_carga_completa": datetime.now().isoformat(timespec="seconds")}
+    if config.render_git_commit:
+        estado["ultimo_commit"] = config.render_git_commit
+    snapshot.salvar(Diferenca(), notificado=False, versoes=versoes, estado=estado)
+    total = len(snapshot.precos())
+    log.info("Primeira carga concluída em %s: %d preços de %d produtos; nada a notificar",
+             _duracao(time.monotonic() - inicio), total, len(codigos))
+    return Resumo(completa=True, detalhe=PRIMEIRA_CARGA, precos=total)
+
+
 def carga_completa(config: cfg.Config, sankhya: Sankhya, snapshot: Snapshot, motivo: str) -> Resumo:
     log.info("Carga completa: %s", motivo)
+    if motivo == PRIMEIRA_CARGA:
+        return carga_inicial(config, sankhya, snapshot)
     # Versões lidas antes dos preços: uma versão criada entre as duas consultas não é marcada
     # como processada e é reaplicada no próximo ciclo (sem efeito se os preços forem iguais).
     versoes = [versao_de_registro(r) for r in sankhya.versoes_tabela()]
-    atuais = {p.chave: p for p in map(de_registro, sankhya.precos_vigentes())}
+    atuais = precos_vigentes(config, sankhya, versoes)
     log.info("%d preços vigentes lidos do Sankhya (%d versões de tabela)", len(atuais), len(versoes))
 
     estado = {"ultima_carga_completa": datetime.now().isoformat(timespec="seconds")}
     if config.render_git_commit:
         estado["ultimo_commit"] = config.render_git_commit
 
-    if snapshot.vazio():
-        dif = Diferenca(gravar=list(atuais.values()))
-        snapshot.salvar(dif, notificado=False, versoes=versoes, estado=estado)
-        log.info("Foto inicial salva com %d preços; nada a notificar", len(atuais))
-        return Resumo(completa=True, detalhe=motivo, precos=len(atuais))
-
     dif = comparar_completo(snapshot.precos(), atuais)
     if dif.removidos:
-        log.info("%d item(ns) saíram da foto (produto inativado ou removido da tabela)", len(dif.removidos))
+        # Não remove da foto: um produto ausente aqui (inativado ou fora da cópia completa usada
+        # como base) voltaria depois como "novo" e geraria um aviso falso com o mesmo preço.
+        log.info("%d item(ns) da foto não vieram nesta carga; mantidos no banco", len(dif.removidos))
+        dif.removidos = []
     notificado = notificar(config, dif, f"carga completa: {motivo}") if dif.alteracoes else False
     snapshot.salvar(dif, notificado, versoes=versoes, estado=estado)
     log.info("Carga completa concluída: %d alteração(ões)", len(dif.alteracoes))
@@ -272,17 +360,6 @@ def executar(config: cfg.Config, sankhya: Sankhya, snapshot: Snapshot, forcar_co
     return erro is None
 
 
-def _travar() -> object:
-    """Impede duas execuções simultâneas (ex.: cron disparando com ciclo anterior ainda rodando)."""
-    trava = open(cfg.RAIZ / ".notifica_precos.lock", "w")
-    try:
-        fcntl.flock(trava, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
-        log.warning("Outra execução em andamento; saindo")
-        sys.exit(0)
-    return trava
-
-
 def _sinal(*_):
     global _parar
     _parar = True
@@ -318,10 +395,14 @@ def main() -> int:
             return 1
         return 0 if telegram.enviar(config, telegram.titulo("✅", "teste") + "\nAvisos do Telegram funcionando.") else 1
 
-    trava = _travar()  # noqa: F841 (mantida aberta até o fim do processo)
     try:
-        # Conexões separadas: os logs gravam fora da transação do snapshot.
-        snapshot = Snapshot(Banco(config.database_url))
+        banco = Banco(config.database_url)
+        # Antes de criar/migrar as tabelas: a primeira carga pode passar dos 5 minutos do cron.
+        if not banco.tentar_travar():
+            log.info("Outra execução em andamento (ex.: primeira carga); saindo")
+            return 0
+        snapshot = Snapshot(banco)
+        # Conexão separada: os logs gravam fora da transação do snapshot.
         logs.configurar(Banco(config.database_url))
     except Exception as erro:
         log.exception("Falha ao conectar no banco")

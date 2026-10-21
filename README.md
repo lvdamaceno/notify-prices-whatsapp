@@ -8,8 +8,16 @@ Verifica no Sankhya, a cada 5 minutos, se algum preço de venda mudou e avisa po
 
 No Sankhya a tabela de preço (sempre a `CODTAB` 0) é **recriada a cada atualização**: cada vez que alguém muda um preço nasce uma nova versão (`NUTAB` na `TGFTAB`). Essa versão pode trazer **só os produtos alterados** ou **uma cópia de todos**. Então o preço vigente de um produto é o da versão mais recente (maior `DTVIGOR` já em vigor, com desempate pelo `NUTAB`) **que contém aquele produto**. O banco guarda essa foto completa, com cerca de 60 mil preços, e o script trabalha de dois jeitos:
 
-**Carga completa** (`sql/precos_vigentes.sql`) recalcula no Sankhya o preço vigente de todos os produtos, compara com a foto e notifica as diferenças. Ela roda:
-- na primeira execução, quando só salva a foto e não notifica;
+**Primeira carga** (`sql/codigos_produtos.sql` + `sql/precos_produtos.sql`) busca os códigos de todos os produtos ativos e, em lotes de `CARGA_LOTE_PRODUTOS` (padrão 500), pega o preço da versão mais recente que contém cada produto. Assim nenhum produto fica de fora, mesmo que não esteja na última cópia completa. Ela não notifica nada e:
+- mostra o andamento no log a cada lote: `lote 12/121 · produtos 5501 a 6000 · 6000/60099 produtos (10.0%) · 1m20s decorridos · ~12m00s restantes`;
+- salva cada lote à medida que termina. Se a execução cair no meio (timeout, Sankhya fora), a próxima continua do último produto concluído;
+- usa uma trava no Postgres (`pg_try_advisory_lock`), então, se passar dos 5 minutos, as execuções seguintes do cron saem sem fazer nada até ela terminar.
+
+**Carga completa** recalcula o preço vigente de todos os produtos, compara com a foto e notifica as diferenças. Para não varrer todo o histórico da `TGFEXC` (milhões de linhas, já que cada atualização recria a tabela), ela parte da **cópia completa mais recente**, que já traz todos os produtos:
+1. Conta os itens das versões mais novas, de 20 em 20, pelo índice de `NUTAB` (`sql/copias_completas.sql`). A primeira versão com pelo menos 10% dos produtos ativos (`sql/produtos_ativos.sql`) é a base; ajuste com `COPIA_COMPLETA_MIN_ITENS`.
+2. Lê a base (`sql/precos_versao.sql`) e sobrepõe as versões parciais posteriores a ela. Se uma tabela não tiver nenhuma cópia completa, todas as versões dela (todas parciais) são aplicadas.
+
+Ela roda:
 - a cada **deploy** no Render (detectado pelo `RENDER_GIT_COMMIT`);
 - a cada `CARGA_COMPLETA_HORAS` (padrão 24h), para pegar edições feitas direto numa versão que já existia;
 - sob demanda, com `python main.py --carga-completa`.
@@ -64,6 +72,9 @@ As tabelas são criadas automaticamente:
 | `DATABASE_URL` | Automático | Ligada ao Postgres pelo `render.yaml` |
 | `TZ` | `render.yaml` | `America/Belem` |
 | `MAX_ITENS_EMAIL` | `render.yaml` | Padrão `500` |
+| `CARGA_LOTE_PRODUTOS` | Opcional | Produtos por consulta na primeira carga. Padrão `500`, máximo `1000` |
+| `SANKHYA_TIMEOUT` | Opcional | Segundos de espera por consulta ao Sankhya. Padrão `120` |
+| `COPIA_COMPLETA_MIN_ITENS` | Opcional | Itens mínimos para uma versão contar como cópia completa. Padrão `0` = 10% dos produtos ativos |
 | `CARGA_COMPLETA_HORAS` | `render.yaml` | Intervalo da reconciliação completa. Padrão `24`; `0` desliga (fica só no deploy) |
 | `LOG_DIAS_RETENCAO` | `render.yaml` | Padrão `90` |
 

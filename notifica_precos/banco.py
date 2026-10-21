@@ -3,6 +3,7 @@
 As queries são escritas com placeholder `?` e traduzidas para `%s` no Postgres.
 """
 
+import fcntl
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime
@@ -14,6 +15,9 @@ ARQUIVO_SQLITE = RAIZ / "dados" / "precos.db"
 # Versão 2: a foto passou a guardar o preço vigente por produto (com DTVIGOR) em vez de só a
 # última versão da tabela. A foto antiga não serve para comparar e é refeita numa carga completa.
 VERSAO_ESQUEMA = "2"
+
+# Chave fixa da trava no Postgres (pg_advisory_lock), compartilhada por todas as execuções.
+CHAVE_TRAVA = 742_310_001
 
 DDL_ESTADO = "CREATE TABLE IF NOT EXISTS estado (chave TEXT PRIMARY KEY, valor TEXT)"
 
@@ -102,6 +106,18 @@ class Banco:
         else:
             self.conn.executescript(DDL_SQLITE)
         self.definir_estado("esquema", VERSAO_ESQUEMA)
+
+    def tentar_travar(self) -> bool:
+        """Garante uma execução por vez. No Render cada execução do cron roda em outro container,
+        então a trava fica no Postgres e dura enquanto esta conexão estiver aberta."""
+        if self.postgres:
+            return bool(self.execute("SELECT pg_try_advisory_lock(?)", (CHAVE_TRAVA,)).fetchone()[0])
+        self._arquivo_trava = open(RAIZ / ".notifica_precos.lock", "w")
+        try:
+            fcntl.flock(self._arquivo_trava, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return True
+        except BlockingIOError:
+            return False
 
     def obter_estado(self, chave: str) -> str | None:
         linha = self.execute("SELECT valor FROM estado WHERE chave = ?", (chave,)).fetchone()
