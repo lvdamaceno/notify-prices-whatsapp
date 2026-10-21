@@ -1,6 +1,6 @@
 # notify-prices-whatsapp
 
-Verifica no Sankhya, a cada 10 minutos, se algum preço de venda mudou e avisa por **e-mail**, usando o SMTP do Google Workspace da empresa. A consulta usa a API oficial do Sankhya (gateway OAuth 2.0).
+Verifica no Sankhya, a cada minuto, se algum preço de venda mudou e avisa por **e-mail**, usando o SMTP do Google Workspace da empresa. A consulta usa a API oficial do Sankhya (gateway OAuth 2.0).
 
 > O projeto começou com notificação por WhatsApp, por isso o nome do repositório. A troca para e-mail aconteceu porque nem a Cloud API da Meta (grupos de até 8 participantes, exige OBA) nem a Blip (sem suporte a grupos) atendiam ao caso.
 
@@ -22,7 +22,7 @@ Ela roda:
 - todo dia às `CARGA_COMPLETA_HORA` (padrão 6h, no fuso de `TZ`), na primeira execução do cron a partir desse horário, para pegar edições feitas direto numa versão que já existia. Se um deploy já fez uma carga completa depois desse horário no mesmo dia, ela não se repete;
 - sob demanda, com `python main.py --carga-completa`.
 
-**Incremental**, a cada 10 minutos:
+**Incremental**, a cada minuto:
 1. Lista as versões já em vigor (`sql/versoes_tabela.sql`) e separa as que ainda não foram processadas. Uma versão com vigor futuro só é processada quando entra em vigor.
 2. Lê os preços de cada versão nova (`sql/precos_versao.sql`) e sobrepõe à foto, produto a produto, da versão mais antiga para a mais nova. Uma versão retroativa não desfaz um preço mais recente.
 3. Notifica só o que mudou de valor:
@@ -101,7 +101,7 @@ Tocar no comando pelo menu envia sem o e-mail; nesse caso o bot pergunta "Qual e
 
 O menu de comandos do bot é registrado automaticamente a cada deploy.
 
-O Cron Job lê os comandos no início de cada execução e responde no chat, então a mudança vale em até 10 minutos. A lista fica no banco (tabela `estado`, chave `email_destinatarios`). `EMAIL_DESTINATARIOS` só é lida na primeira execução, quando a lista ainda não existe no banco: ela é gravada lá e, a partir daí, a variável pode ser removida do Render (editá-la não muda mais nada).
+O Cron Job lê os comandos no início de cada execução e responde no chat, então a mudança vale em até 1 minuto. A lista fica no banco (tabela `estado`, chave `email_destinatarios`). `EMAIL_DESTINATARIOS` só é lida na primeira execução, quando a lista ainda não existe no banco: ela é gravada lá e, a partir daí, a variável pode ser removida do Render (editá-la não muda mais nada).
 
 ### Senha de app do Google Workspace
 
@@ -109,7 +109,7 @@ O Cron Job lê os comandos no início de cada execução e responde no chat, ent
 2. Gere a senha em https://myaccount.google.com/apppasswords e coloque em `SMTP_SENHA`.
 3. Se a opção não aparecer, o administrador do Workspace precisa permitir senhas de app (Admin Console → Segurança).
 
-O limite do Gmail é de 2.000 e-mails por dia por conta. O monitor envia no máximo um e-mail a cada 10 minutos (144 por dia), e só quando há alteração.
+O limite do Gmail é de 2.000 e-mails por dia por conta. O monitor roda a cada minuto, mas só envia e-mail quando há alteração de preço ou de promoção (no máximo um de cada por execução).
 
 ## Aviso de deploy
 
@@ -121,7 +121,7 @@ Se a primeira execução falhar, os erros seguintes do mesmo tipo não geram avi
 
 ## Avisos no Telegram
 
-Opcionais: sem `TELEGRAM_BOT_TOKEN` e `TELEGRAM_CHAT_ID`, nada é enviado. Para não avisar a cada 10 minutos, só os eventos relevantes geram mensagem:
+Opcionais: sem `TELEGRAM_BOT_TOKEN` e `TELEGRAM_CHAT_ID`, nada é enviado. Para não avisar a cada minuto, só os eventos relevantes geram mensagem:
 
 | Evento | Aviso |
 |---|---|
@@ -130,7 +130,7 @@ Opcionais: sem `TELEGRAM_BOT_TOKEN` e `TELEGRAM_CHAT_ID`, nada é enviado. Para 
 | Deploy | 🚀 resultado da primeira execução (veja *Aviso de deploy*) |
 | Reconciliação diária (6h) | 🔄 **só se encontrar alteração**; sem alteração fica em silêncio |
 | Carga completa manual (`--carga-completa`) | 🔄 motivo, total de preços e alterações |
-| Erro | ❌ só o **primeiro** de cada tipo. Com o Sankhya fora por horas, chega um aviso, não um a cada 10 minutos |
+| Erro | ❌ só o **primeiro** de cada tipo. Com o Sankhya fora por horas, chega um aviso, não um a cada minuto |
 | Volta a funcionar depois de um erro | ✅ "voltou a funcionar" |
 
 Para configurar:
@@ -144,7 +144,7 @@ Uma falha no Telegram só é registrada no log e nunca interrompe o monitor nem 
 
 O disco dos serviços do Render é apagado a cada deploy ou reinício, e Cron Jobs não aceitam disco persistente. Por isso os dados ficam num **Render Postgres**. O `render.yaml` cria:
 
-- **Cron Job** `notifica-precos`: roda `python main.py` com o schedule `*/10 * * * *` (o mínimo do cron é 1 minuto: `* * * * *`). O Render cobra por segundo de execução, com mínimo de US$ 1/mês, e nunca roda duas execuções ao mesmo tempo. O envio de e-mail pelas portas 465 e 587 funciona porque o Cron Job é um serviço pago; os serviços gratuitos bloqueiam SMTP.
+- **Cron Job** `notifica-precos`: roda `python main.py` com o schedule `* * * * *` (a cada minuto, o mínimo do cron). O Render cobra por segundo de execução, com mínimo de US$ 1/mês, e nunca roda duas execuções ao mesmo tempo. O envio de e-mail pelas portas 465 e 587 funciona porque o Cron Job é um serviço pago; os serviços gratuitos bloqueiam SMTP.
 - **Postgres** `notifica-precos-db` (plano `basic-256mb`): o `DATABASE_URL` é ligado ao Cron Job pela rede interna.
 
 > Não use o Postgres **Free** do Render: ele expira 30 dias depois de criado e é apagado depois de mais 14 dias, junto com o histórico.

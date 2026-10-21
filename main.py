@@ -1,7 +1,7 @@
 """Verifica alterações de preço de venda no Sankhya e avisa por e-mail.
 
 Uso:
-    python main.py                   # um ciclo (para usar com cron a cada 10 min)
+    python main.py                   # um ciclo (para usar com cron a cada minuto)
     python main.py --loop            # fica rodando, um ciclo a cada INTERVALO_MINUTOS
     python main.py --carga-completa  # recalcula todos os preços vigentes e compara com o banco
     python main.py --testar-email    # envia os e-mails de exemplo (preços e promoções, fictícios) para EMAIL_DEPLOY
@@ -353,7 +353,7 @@ def _assinatura(erro: BaseException) -> str:
 
 
 def avisar_erro(config: cfg.Config, snapshot: Snapshot | None, erro: BaseException) -> None:
-    """Avisa só o primeiro erro: com o Sankhya fora, o cron falharia a cada 10 minutos."""
+    """Avisa só o primeiro erro: com o Sankhya fora, o cron falharia a cada minuto."""
     assinatura = _assinatura(erro)
     try:
         if snapshot and snapshot.estado("erro_ativo") == assinatura:
@@ -500,7 +500,7 @@ def main() -> int:
 
     try:
         banco = Banco(config.database_url)
-        # Antes de criar/migrar as tabelas: a primeira carga pode passar dos 10 minutos do cron.
+        # Antes de criar/migrar as tabelas: a primeira carga leva bem mais que o intervalo do cron.
         if not banco.tentar_travar():
             log.info("Outra execução em andamento (ex.: primeira carga); saindo")
             return 0

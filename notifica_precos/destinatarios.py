@@ -37,7 +37,7 @@ AJUDA = "\n".join([
     f"{ADICIONAR} joao maria@empresa.com — inclui (só o usuário usa o domínio padrão)",
     f"{REMOVER} joao — tira da lista",
     "Sem o e-mail, o bot pergunta e a próxima mensagem é a resposta.",
-    "As mudanças valem a partir do próximo ciclo (até 10 min).",
+    "As mudanças valem a partir do próximo ciclo (até 1 min).",
 ])
 
 
