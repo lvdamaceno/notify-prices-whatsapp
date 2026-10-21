@@ -39,6 +39,17 @@ def enviar(config: Config, texto: str) -> bool:
         return False
 
 
+def mensagens_recebidas(config: Config, offset: int) -> list[dict]:
+    """Mensagens novas enviadas ao bot (getUpdates). Sem webhook: o próprio cron busca a cada ciclo."""
+    resp = requests.get(
+        f"https://api.telegram.org/bot{config.telegram_bot_token}/getUpdates",
+        params={"offset": offset, "timeout": 0, "allowed_updates": '["message"]'},
+        timeout=TIMEOUT,
+    )
+    resp.raise_for_status()
+    return resp.json().get("result", [])
+
+
 def titulo(icone: str, texto: str) -> str:
     return f"{icone} <b>Monitor de preços</b> · {escape(texto)}"
 

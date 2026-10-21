@@ -72,6 +72,7 @@ class Config:
     email_remetente: str
     email_destinatarios: list[str]
     email_deploy: list[str]
+    email_dominio: str
 
     telegram_bot_token: str
     telegram_chat_id: str
@@ -119,6 +120,7 @@ def carregar() -> Config:
         email_destinatarios=_destinatarios(os.getenv("EMAIL_DESTINATARIOS", ""), dominio),
         # Quem recebe o aviso de cada deploy (ex.: gti).
         email_deploy=_destinatarios(os.getenv("EMAIL_DEPLOY", ""), dominio),
+        email_dominio=dominio,
         telegram_bot_token=os.getenv("TELEGRAM_BOT_TOKEN", "").strip(),
         telegram_chat_id=os.getenv("TELEGRAM_CHAT_ID", "").strip(),
         database_url=os.getenv("DATABASE_URL", "").strip(),

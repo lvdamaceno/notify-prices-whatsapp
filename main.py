@@ -13,11 +13,11 @@ import logging
 import signal
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 
 from notifica_precos import config as cfg
-from notifica_precos import envio_email, logs, mensagem, telegram
+from notifica_precos import destinatarios, envio_email, logs, mensagem, telegram
 from notifica_precos.banco import Banco
 from notifica_precos.sankhya import Sankhya
 from notifica_precos.snapshot import (
@@ -347,6 +347,14 @@ def novo_deploy(config: cfg.Config, snapshot: Snapshot) -> bool:
 
 def executar(config: cfg.Config, sankhya: Sankhya, snapshot: Snapshot, forcar_completa: bool) -> bool:
     inicio = time.monotonic()
+    try:
+        destinatarios.processar_comandos(snapshot.banco, config)
+    except Exception:
+        log.exception("Falha ao ler os comandos do Telegram")
+    try:
+        config = replace(config, email_destinatarios=destinatarios.lista(snapshot.banco, config))
+    except Exception:
+        log.exception("Falha ao ler os destinatários no banco; usando EMAIL_DESTINATARIOS")
     deploy = novo_deploy(config, snapshot)
     resumo, erro = None, None
     try:
