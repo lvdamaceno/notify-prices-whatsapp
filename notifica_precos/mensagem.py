@@ -9,6 +9,8 @@ from .snapshot import Alteracao, Preco
 
 COR_ALTA = "#c62828"
 COR_QUEDA = "#2e7d32"
+EMAIL_CANCELAMENTO = "gti@casacontente.com.br"
+AVISO_CANCELAMENTO = f"Caso você não queira receber esses e-mails, solicite o cancelamento para {EMAIL_CANCELAMENTO}."
 
 
 def moeda(valor: float) -> str:
@@ -65,6 +67,7 @@ def texto(alteracoes: list[Alteracao], max_itens: int, origem: str = "") -> str:
         )
     if len(alteracoes) > max_itens:
         linhas += ["", f"...e mais {len(alteracoes) - max_itens} item(ns). Lista completa no CSV anexo."]
+    linhas += ["", AVISO_CANCELAMENTO]
     return "\n".join(linhas)
 
 
@@ -110,6 +113,7 @@ def html(alteracoes: list[Alteracao], max_itens: int, origem: str = "") -> str:
 </table>
 {restante}
 <p style="margin-top:24px;color:#888;font-size:12px">Enviado automaticamente pelo monitor de preços do Sankhya.</p>
+<p style="margin-top:4px;color:#888;font-size:12px">{escape(AVISO_CANCELAMENTO).replace(EMAIL_CANCELAMENTO, f'<a href="mailto:{EMAIL_CANCELAMENTO}" style="color:#888">{EMAIL_CANCELAMENTO}</a>')}</p>
 </body></html>"""
 
 
