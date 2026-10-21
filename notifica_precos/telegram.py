@@ -64,7 +64,7 @@ def definir_comandos(config: Config, comandos: list[tuple[str, str]]) -> None:
         timeout=TIMEOUT,
     )
     resp.raise_for_status()
-    for escopo in ("default", "all_private_chats", "all_group_chats"):
+    for escopo in ("default", "all_private_chats", "all_group_chats", "all_chat_administrators"):
         resp = requests.post(f"{url}/deleteMyCommands", json={"scope": {"type": escopo}}, timeout=TIMEOUT)
         resp.raise_for_status()
 
