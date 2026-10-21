@@ -78,7 +78,7 @@ As tabelas são criadas automaticamente:
 | `CARGA_COMPLETA_HORA` | `render.yaml` | Hora fixa (0-23) da reconciliação diária. Padrão `6`; vazio desliga (fica só no deploy) |
 | `LOG_DIAS_RETENCAO` | `render.yaml` | Padrão `90` |
 
-As variáveis marcadas como `sync: false` no `render.yaml` não têm valor no repositório. Os destinatários e as credenciais existem só no painel do Render, em **notifica-precos → Environment**. Para incluir ou tirar alguém da lista, mande um comando para o bot do Telegram (só na conversa direta com o bot, no chat de `TELEGRAM_CHAT_ID`; comandos em grupos e de outros chats são ignorados, e o menu nem aparece nos grupos):
+As variáveis marcadas como `sync: false` no `render.yaml` não têm valor no repositório. Os destinatários e as credenciais existem só no painel do Render, em **notifica-precos → Environment**. Para incluir ou tirar alguém da lista, mande um comando para o bot do Telegram (só na conversa direta com o bot, no chat de `TELEGRAM_CHAT_ID`; comandos em grupos e de outros chats são ignorados, e o menu só aparece nessa conversa; outras pessoas que escreverem para o bot não recebem resposta):
 
 - `/listar_destinatarios_preco`: mostra a lista
 - `/adicionar_destinatario_preco joao ana@fornecedor.com.br`: inclui (basta o usuário para o domínio padrão)

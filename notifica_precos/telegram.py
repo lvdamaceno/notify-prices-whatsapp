@@ -55,16 +55,16 @@ def mensagens_recebidas(config: Config, offset: int) -> list[dict]:
 
 
 def definir_comandos(config: Config, comandos: list[tuple[str, str]]) -> None:
-    """Menu de comandos só nas conversas diretas com o bot; tira dos grupos e do escopo padrão."""
+    """Menu de comandos só na conversa direta com o TELEGRAM_CHAT_ID; tira de todos os outros escopos."""
     url = f"https://api.telegram.org/bot{config.telegram_bot_token}"
     resp = requests.post(
         f"{url}/setMyCommands",
         json={"commands": [{"command": c, "description": d} for c, d in comandos],
-              "scope": {"type": "all_private_chats"}},
+              "scope": {"type": "chat", "chat_id": config.telegram_chat_id}},
         timeout=TIMEOUT,
     )
     resp.raise_for_status()
-    for escopo in ("default", "all_group_chats"):
+    for escopo in ("default", "all_private_chats", "all_group_chats"):
         resp = requests.post(f"{url}/deleteMyCommands", json={"scope": {"type": escopo}}, timeout=TIMEOUT)
         resp.raise_for_status()
 
