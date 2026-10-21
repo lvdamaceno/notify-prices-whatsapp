@@ -1,10 +1,9 @@
-"""Verifica alterações de preço de venda no Sankhya e notifica um grupo do WhatsApp.
+"""Verifica alterações de preço de venda no Sankhya e avisa por e-mail.
 
 Uso:
-    python main.py                    # um ciclo (para usar com cron a cada 5 min)
-    python main.py --loop             # fica rodando, um ciclo a cada INTERVALO_MINUTOS
-    python main.py --testar-whatsapp  # envia mensagem de teste ao grupo
-    python main.py --listar-grupos    # lista os grupos do número (para achar o WHATSAPP_GROUP_ID)
+    python main.py                 # um ciclo (para usar com cron a cada 5 min)
+    python main.py --loop          # fica rodando, um ciclo a cada INTERVALO_MINUTOS
+    python main.py --testar-email  # envia um e-mail de teste aos destinatários
 """
 
 import argparse
@@ -15,7 +14,7 @@ import sys
 import time
 
 from notifica_precos import config as cfg
-from notifica_precos import logs, mensagem, whatsapp
+from notifica_precos import envio_email, logs, mensagem
 from notifica_precos.banco import Banco
 from notifica_precos.sankhya import Sankhya
 from notifica_precos.snapshot import Diferenca, Snapshot, de_registro
@@ -58,12 +57,19 @@ def ciclo(config: cfg.Config, sankhya: Sankhya, snapshot: Snapshot) -> None:
         )
 
     notificado = False
-    if config.whatsapp_configurado:
+    if config.email_configurado:
         # Se o envio falhar, a foto não é atualizada e a alteração é reenviada no próximo ciclo.
-        whatsapp.enviar_grupo(config, mensagem.montar(alteracoes, config.max_itens_mensagem))
+        envio_email.enviar(
+            config,
+            mensagem.assunto(alteracoes),
+            mensagem.texto(alteracoes, config.max_itens_email),
+            mensagem.html(alteracoes, config.max_itens_email),
+            anexos=[(f"alteracoes_precos_{time.strftime('%Y%m%d_%H%M')}.csv",
+                     mensagem.csv_completo(alteracoes), "text/csv")],
+        )
         notificado = True
     else:
-        log.warning("WhatsApp não configurado: alterações registradas apenas no log")
+        log.warning("E-mail não configurado: alterações registradas apenas no log")
 
     snapshot.salvar(dif, notificado)
     log.info("%d alteração(ões) processada(s) (%.1fs)", len(alteracoes), time.monotonic() - inicio)
@@ -89,20 +95,22 @@ def _sinal(*_):
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--loop", action="store_true", help="roda continuamente a cada INTERVALO_MINUTOS")
-    parser.add_argument("--testar-whatsapp", action="store_true", help="envia mensagem de teste ao grupo")
-    parser.add_argument("--listar-grupos", action="store_true", help="lista os grupos do número de WhatsApp")
+    parser.add_argument("--testar-email", action="store_true", help="envia um e-mail de teste aos destinatários")
     args = parser.parse_args()
 
     config = cfg.carregar()
     logs.configurar()
 
-    if args.listar_grupos:
-        for g in whatsapp.listar_grupos(config):
-            print(f"{g.get('id')}\t{g.get('subject')}")
-        return 0
-
-    if args.testar_whatsapp:
-        whatsapp.enviar_grupo(config, "✅ Teste do notificador de preços do Sankhya")
+    if args.testar_email:
+        try:
+            envio_email.enviar(
+                config,
+                "Teste do monitor de preços do Sankhya",
+                "Se você recebeu este e-mail, o envio pelo SMTP está funcionando.",
+            )
+        except envio_email.EmailErro as erro:
+            log.error("%s", erro)
+            return 1
         return 0
 
     trava = _travar()  # noqa: F841 (mantida aberta até o fim do processo)

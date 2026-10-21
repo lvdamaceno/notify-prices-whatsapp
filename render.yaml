@@ -28,16 +28,20 @@ services:
         sync: false
       - key: SANKHYA_CODTABS
         sync: false
-      - key: WHATSAPP_TOKEN
+      - key: SMTP_HOST
         sync: false
-      - key: WHATSAPP_PHONE_NUMBER_ID
+      - key: SMTP_PORTA
+        value: "587"
+      - key: SMTP_USUARIO
         sync: false
-      - key: WHATSAPP_GROUP_ID
+      - key: SMTP_SENHA
         sync: false
-      - key: WHATSAPP_API_VERSION
-        value: v26.0
-      - key: MAX_ITENS_MENSAGEM
-        value: "50"
+      - key: EMAIL_REMETENTE
+        sync: false
+      - key: EMAIL_DESTINATARIOS
+        sync: false
+      - key: MAX_ITENS_EMAIL
+        value: "500"
       - key: LOG_DIAS_RETENCAO
         value: "90"
 

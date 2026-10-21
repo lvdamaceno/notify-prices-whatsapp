@@ -23,6 +23,10 @@ def _obrigatoria(nome: str) -> str:
     return valor
 
 
+def _lista(valor: str) -> list[str]:
+    return [v.strip() for v in valor.replace(";", ",").split(",") if v.strip()]
+
+
 def _codtabs(valor: str) -> list[int]:
     # Só aceita números, para o valor poder ir direto no SQL sem risco de injeção.
     return [int(v) for v in valor.replace(" ", "").split(",") if v]
@@ -36,20 +40,22 @@ class Config:
     sankhya_x_token: str
     sankhya_codtabs: list[int]
 
-    whatsapp_token: str
-    whatsapp_phone_number_id: str
-    whatsapp_group_id: str
-    whatsapp_api_version: str
+    smtp_host: str
+    smtp_porta: int
+    smtp_usuario: str
+    smtp_senha: str
+    email_remetente: str
+    email_destinatarios: list[str]
 
     database_url: str
 
     intervalo_minutos: int
-    max_itens_mensagem: int
+    max_itens_email: int
     log_dias_retencao: int
 
     @property
-    def whatsapp_configurado(self) -> bool:
-        return bool(self.whatsapp_token and self.whatsapp_phone_number_id)
+    def email_configurado(self) -> bool:
+        return bool(self.smtp_host and self.email_destinatarios)
 
 
 def carregar() -> Config:
@@ -59,12 +65,15 @@ def carregar() -> Config:
         sankhya_client_secret=_obrigatoria("SANKHYA_CLIENT_SECRET"),
         sankhya_x_token=_obrigatoria("SANKHYA_X_TOKEN"),
         sankhya_codtabs=_codtabs(os.getenv("SANKHYA_CODTABS", "")),
-        whatsapp_token=os.getenv("WHATSAPP_TOKEN", "").strip(),
-        whatsapp_phone_number_id=os.getenv("WHATSAPP_PHONE_NUMBER_ID", "").strip(),
-        whatsapp_group_id=os.getenv("WHATSAPP_GROUP_ID", "").strip(),
-        whatsapp_api_version=os.getenv("WHATSAPP_API_VERSION", "v26.0").strip(),
+        smtp_host=os.getenv("SMTP_HOST", "").strip(),
+        smtp_porta=int(os.getenv("SMTP_PORTA", "587")),
+        smtp_usuario=os.getenv("SMTP_USUARIO", "").strip(),
+        smtp_senha=os.getenv("SMTP_SENHA", "").strip(),
+        # Sem EMAIL_REMETENTE, envia em nome da própria conta SMTP.
+        email_remetente=(os.getenv("EMAIL_REMETENTE", "").strip() or os.getenv("SMTP_USUARIO", "").strip()),
+        email_destinatarios=_lista(os.getenv("EMAIL_DESTINATARIOS", "")),
         database_url=os.getenv("DATABASE_URL", "").strip(),
         intervalo_minutos=int(os.getenv("INTERVALO_MINUTOS", "5")),
-        max_itens_mensagem=int(os.getenv("MAX_ITENS_MENSAGEM", "50")),
+        max_itens_email=int(os.getenv("MAX_ITENS_EMAIL", "500")),
         log_dias_retencao=int(os.getenv("LOG_DIAS_RETENCAO", "90")),
     )
