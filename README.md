@@ -105,7 +105,8 @@ Opcionais: sem `TELEGRAM_BOT_TOKEN` e `TELEGRAM_CHAT_ID`, nada é enviado. Para 
 | Ciclo sem versão nova ou sem alteração | nenhum |
 | Preço alterado (e-mail enviado) | ✅ quantidade de alterações, NUTAB e destinatários |
 | Deploy | 🚀 resultado da primeira execução (veja *Aviso de deploy*) |
-| Carga completa (reconciliação diária, `--carga-completa`) | 🔄 motivo, total de preços e alterações |
+| Reconciliação diária (6h) | 🔄 **só se encontrar alteração**; sem alteração fica em silêncio |
+| Carga completa manual (`--carga-completa`) | 🔄 motivo, total de preços e alterações |
 | Erro | ❌ só o **primeiro** de cada tipo. Com o Sankhya fora por horas, chega um aviso, não um a cada 10 minutos |
 | Volta a funcionar depois de um erro | ✅ "voltou a funcionar" |
 

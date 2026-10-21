@@ -35,6 +35,7 @@ FRACAO_COPIA_COMPLETA = 0.1
 LOTE_VERSOES = 20
 
 PRIMEIRA_CARGA = "primeira carga"
+RECONCILIACAO_DIARIA = "reconciliação diária"
 
 _parar = False
 
@@ -47,10 +48,11 @@ class Resumo:
     precos: int = 0
     alteracoes: int = 0
     email_enviado: bool = False
+    diaria: bool = False  # reconciliação diária: só avisa se encontrar alteração
 
     @property
     def relevante(self) -> bool:
-        return self.completa or self.alteracoes > 0
+        return self.alteracoes > 0 or (self.completa and not self.diaria)
 
 
 def motivo_carga_completa(config: cfg.Config, snapshot: Snapshot, forcar: bool) -> str | None:
@@ -67,7 +69,7 @@ def motivo_carga_completa(config: cfg.Config, snapshot: Snapshot, forcar: bool) 
         horario = agora.replace(hour=config.carga_completa_hora, minute=0, second=0, microsecond=0)
         ultima = snapshot.estado("ultima_carga_completa")
         if agora >= horario and (not ultima or datetime.fromisoformat(ultima) < horario):
-            return f"reconciliação diária ({config.carga_completa_hora}h)"
+            return f"{RECONCILIACAO_DIARIA} ({config.carga_completa_hora}h)"
     return None
 
 
@@ -209,7 +211,8 @@ def carga_completa(config: cfg.Config, sankhya: Sankhya, snapshot: Snapshot, mot
     notificado = notificar(config, dif, f"carga completa: {motivo}") if dif.alteracoes else False
     snapshot.salvar(dif, notificado, versoes=versoes, estado=estado)
     log.info("Carga completa concluída: %d alteração(ões)", len(dif.alteracoes))
-    return Resumo(True, motivo, len(atuais), len(dif.alteracoes), notificado)
+    return Resumo(True, motivo, len(atuais), len(dif.alteracoes), notificado,
+                  diaria=motivo.startswith(RECONCILIACAO_DIARIA))
 
 
 def incremental(config: cfg.Config, sankhya: Sankhya, snapshot: Snapshot) -> Resumo:
