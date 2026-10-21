@@ -2,6 +2,7 @@
 
 import csv
 import io
+from dataclasses import replace
 from datetime import datetime
 from html import escape
 
@@ -219,6 +220,9 @@ def deploy(config, precos: int | None, alteracoes: int | None, erro: BaseExcepti
 
 SITUACAO = {promo.INICIO: "Entrou em promoção", promo.ALTERADA: "Desconto alterado", promo.FIM: "Promoção encerrada"}
 ORDEM_SITUACAO = {promo.INICIO: 0, promo.ALTERADA: 1, promo.FIM: 2}
+# Uma promoção com mais avisos do mesmo tipo que isso (ex.: grupo de desconto que começa ou vence)
+# vira uma linha de resumo no corpo; o CSV anexo continua com todos os produtos.
+LIMITE_RESUMO = 20
 
 
 def _data(iso: str) -> str:
@@ -255,6 +259,26 @@ def _ordenar_eventos(eventos: list[Evento]) -> list[Evento]:
     return sorted(eventos, key=lambda e: (ORDEM_SITUACAO[e.tipo], e.promo.descrprod, e.promo.codprod))
 
 
+def _separar(eventos: list[Evento]) -> tuple[list[tuple[Evento, int]], list[Evento]]:
+    """(resumos, individuais): resumos são (um evento de exemplo, quantidade de produtos)."""
+    grupos: dict[tuple, list[Evento]] = {}
+    for e in eventos:
+        k = (e.tipo, e.promo.nupromocao, e.promo.local_promo, e.promo.desconto, e.promo.dtfinal)
+        grupos.setdefault(k, []).append(e)
+    resumos, individuais = [], []
+    for lista in grupos.values():
+        if len(lista) > LIMITE_RESUMO:
+            resumos.append((lista[0], len(lista)))
+        else:
+            individuais += lista
+    resumos.sort(key=lambda r: (ORDEM_SITUACAO[r[0].tipo], -r[1]))
+    return resumos, _ordenar_eventos(individuais)
+
+
+def _nome_promocao(p: Promocao) -> str:
+    return f"{p.descricao or 'Promoção'} (nº {p.nupromocao})"
+
+
 def _resumo_promocoes(eventos: list[Evento]) -> str:
     nomes = {promo.INICIO: "iniciada(s)", promo.ALTERADA: "alterada(s)", promo.FIM: "encerrada(s)"}
     return ", ".join(f"{n} {nomes[t]}" for t in nomes if (n := sum(1 for e in eventos if e.tipo == t)))
@@ -266,7 +290,15 @@ def assunto_promocoes(eventos: list[Evento]) -> str:
 
 def texto_promocoes(eventos: list[Evento], max_itens: int) -> str:
     linhas = [f"Promoções de preço - {datetime.now():%d/%m/%Y %H:%M} - {_resumo_promocoes(eventos)}", ""]
-    for e in _ordenar_eventos(eventos)[:max_itens]:
+    resumos, individuais = _separar(eventos)
+    for e, n in resumos:
+        linhas.append(
+            f"{SITUACAO[e.tipo]} | {_nome_promocao(e.promo)} | {milhar(n)} produtos | "
+            f"{_desconto(e.promo)} de desconto | {_periodo(e)} | lista completa no CSV anexo"
+        )
+    if resumos:
+        linhas.append("")
+    for e in individuais[:max_itens]:
         p = e.promo
         if e.tipo == promo.FIM:
             valores = f"preço de venda volta a {moeda(e.preco_atual)} (com desconto era {moeda(p.preco_promo)})"
@@ -276,8 +308,8 @@ def texto_promocoes(eventos: list[Evento], max_itens: int) -> str:
             f"{SITUACAO[e.tipo]} | {p.codprod}{' | ' + p.modelo if p.modelo else ''} | {_produto_promo(p)} | "
             f"{valores} | {_periodo(e)}"
         )
-    if len(eventos) > max_itens:
-        linhas += ["", f"...e mais {len(eventos) - max_itens} item(ns). Lista completa no CSV anexo."]
+    if len(individuais) > max_itens:
+        linhas += ["", f"...e mais {len(individuais) - max_itens} item(ns). Lista completa no CSV anexo."]
     linhas += ["", AVISO_CANCELAMENTO]
     return "\n".join(linhas)
 
@@ -287,8 +319,33 @@ def html_promocoes(eventos: list[Evento], max_itens: int) -> str:
     numero = 'style="padding:6px 10px;border-bottom:1px solid #e0e0e0;text-align:right;white-space:nowrap"'
     cores = {promo.INICIO: COR_QUEDA, promo.ALTERADA: "#ef6c00", promo.FIM: "#555"}
 
+    def tabela(colunas: list[tuple[str, str]], linhas: list[str]) -> str:
+        cabecalho = "".join(
+            f'<th style="padding:6px 10px;text-align:{alinhamento};border-bottom:2px solid #333">{titulo}</th>'
+            for titulo, alinhamento in colunas
+        )
+        return (f'<table style="border-collapse:collapse"><thead><tr>{cabecalho}</tr></thead>'
+                f"<tbody>{''.join(linhas)}</tbody></table>")
+
+    resumos, individuais = _separar(eventos)
+    secao_resumos = ""
+    if resumos:
+        linhas_resumo = [
+            f'<tr><td {celula}><span style="color:{cores[e.tipo]}">{SITUACAO[e.tipo]}</span></td>'
+            f"<td {celula}>{escape(_nome_promocao(e.promo))}</td><td {numero}><strong>{milhar(n)}</strong></td>"
+            f"<td {numero}>{_desconto(e.promo)}</td><td {celula}>{escape(_periodo(e))}</td></tr>"
+            for e, n in resumos
+        ]
+        secao_resumos = (
+            '<h3 style="margin:0 0 4px">Promoções com muitos produtos</h3>'
+            '<p style="margin:0 0 8px;color:#555">Os produtos de cada uma estão no CSV anexo.</p>'
+            + tabela([("Situação", "left"), ("Promoção", "left"), ("Produtos", "right"),
+                      ("Desconto", "right"), ("Período", "left")], linhas_resumo)
+            + '<div style="height:24px"></div>'
+        )
+
     linhas = []
-    for e in _ordenar_eventos(eventos)[:max_itens]:
+    for e in individuais[:max_itens]:
         p = e.promo
         if e.tipo == promo.FIM:
             sem = f"<strong>{moeda(e.preco_atual)}</strong>"
@@ -306,27 +363,24 @@ def html_promocoes(eventos: list[Evento], max_itens: int) -> str:
         )
 
     restante = ""
-    if len(eventos) > max_itens:
+    if len(individuais) > max_itens:
         restante = (
-            f'<p style="color:#555">…e mais {len(eventos) - max_itens} item(ns). '
+            f'<p style="color:#555">…e mais {len(individuais) - max_itens} item(ns). '
             "A lista completa está no CSV anexo.</p>"
         )
-    cabecalho = "".join(
-        f'<th style="padding:6px 10px;text-align:{alinhamento};border-bottom:2px solid #333">{titulo}</th>'
-        for titulo, alinhamento in [
+    secao_produtos = ""
+    if linhas:
+        secao_produtos = tabela([
             ("Situação", "left"), ("Código", "right"), ("Modelo", "left"), ("Produto", "left"),
             ("Preço sem desconto", "right"), ("Preço com desconto", "right"), ("Desconto", "right"),
             ("Período", "left"),
-        ]
-    )
+        ], linhas)
     return f"""<!doctype html>
 <html><body style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#222">
 <h2 style="margin:0 0 4px">Promoções de preço</h2>
 <p style="margin:0 0 16px;color:#555">{datetime.now():%d/%m/%Y %H:%M} · {_resumo_promocoes(eventos)}</p>
-<table style="border-collapse:collapse">
-<thead><tr>{cabecalho}</tr></thead>
-<tbody>{''.join(linhas)}</tbody>
-</table>
+{secao_resumos}
+{secao_produtos}
 {restante}
 {_rodape_html()}
 </body></html>"""
@@ -363,4 +417,9 @@ def exemplo_promocoes() -> list[Evento]:
                p(90002, "MC-120-TESTE", "MESA DE CENTRO (EXEMPLO)", 899.9, 809.91, pct=10), preco_atual=899.9),
         Evento(promo.FIM, p(90004, "CD-01-TESTE", "CADEIRA DE JANTAR (EXEMPLO)", 459.0, 413.1, pct=10,
                             fim="2026-10-20T00:00:00"), preco_atual=459.0),
+    ] + [  # grupo de desconto grande que venceu: vira uma linha de resumo
+        Evento(promo.FIM, replace(p(91000 + i, f"GR-{i}-TESTE", f"PRODUTO DO GRUPO {i} (EXEMPLO)", 300.0, 240.0, pct=20,
+                                    fim="2026-10-20T00:00:00", local=102), nupromocao=9999,
+                                  descricao="GRUPO TESTE 20%"), preco_atual=300.0)
+        for i in range(35)
     ]
