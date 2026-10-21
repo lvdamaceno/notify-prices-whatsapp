@@ -3,3 +3,4 @@
 __pycache__/
 dados/
 .notifica_precos.lock
+*.swp
