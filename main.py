@@ -313,6 +313,11 @@ def avisar_deploy(
         config, resumo.precos if resumo else None, resumo.alteracoes if resumo else None, erro, segundos,
     )
     situacao_email = "e-mail de deploy: EMAIL_DEPLOY não configurado"
+    try:
+        destinatarios.registrar_menu(config)
+    except Exception:
+        log.exception("Falha ao registrar o menu de comandos do Telegram")
+
     if config.email_deploy:
         try:
             envio_email.enviar(config, assunto, texto, html, destinatarios=config.email_deploy)

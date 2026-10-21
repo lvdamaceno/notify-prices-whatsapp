@@ -14,19 +14,29 @@ from .config import Config
 
 log = logging.getLogger(__name__)
 
+LISTAR = "/listar_destinatarios_preco"
+ADICIONAR = "/adicionar_destinatario_preco"
+REMOVER = "/remover_destinatario_preco"
+# Menu do bot (setMyCommands), registrado a cada deploy para ficar igual ao código.
+MENU = [
+    (LISTAR, "Mostra quem recebe o e-mail de preços"),
+    (ADICIONAR, "Inclui destinatários (só o usuário ou o e-mail completo)"),
+    (REMOVER, "Tira destinatários da lista"),
+]
+
 CHAVE_LISTA = "email_destinatarios"
 CHAVE_OFFSET = "telegram_offset"
-# /adicionar ou /remover enviado sem e-mail: a próxima mensagem do chat é o e-mail.
+# ADICIONAR ou REMOVER enviado sem e-mail: a próxima mensagem do chat é o e-mail.
 CHAVE_PENDENTE = "telegram_comando_pendente"
 
 EMAIL_VALIDO = re.compile(r"^[^@\s,;<>]+@[^@\s,;<>]+\.[^@\s,;<>]+$")
 
 AJUDA = "\n".join([
     "<b>Destinatários do e-mail de preços</b>",
-    "/emails — mostra a lista",
-    "/adicionar joao maria@empresa.com — inclui (só o usuário usa o domínio padrão)",
+    f"{LISTAR} — mostra a lista",
+    f"{ADICIONAR} joao maria@empresa.com — inclui (só o usuário usa o domínio padrão)",
+    f"{REMOVER} joao — tira da lista",
     "Sem o e-mail, o bot pergunta e a próxima mensagem é a resposta.",
-    "/remover joao — tira da lista",
     "As mudanças valem a partir do próximo ciclo (até 10 min).",
 ])
 
@@ -57,19 +67,19 @@ def _mostrar(emails: list[str]) -> str:
 
 def _executar(banco: Banco, config: Config, texto: str) -> str:
     partes = texto.replace(",", " ").replace(";", " ").split()
-    # Em grupos o comando chega como /emails@NomeDoBot.
+    # Em grupos o comando chega como /comando@NomeDoBot.
     comando = partes[0].split("@")[0].lower() if partes else ""
     argumentos = partes[1:]
     emails = lista(banco, config)
 
-    if comando in ("/emails", "/lista"):
+    if comando == LISTAR:
         return _mostrar(emails)
-    if comando not in ("/adicionar", "/remover"):
+    if comando not in (ADICIONAR, REMOVER):
         return AJUDA
     validos = [(a, _normalizar(a, config.email_dominio)) for a in argumentos]
     invalidos = [a for a, e in validos if e is None]
     alvos = [e for _, e in validos if e]
-    if comando == "/adicionar":
+    if comando == ADICIONAR:
         mudou = [e for e in dict.fromkeys(alvos) if e not in emails]
         emails += mudou
         acao = "Incluído(s)"
@@ -102,9 +112,9 @@ def processar_comandos(banco: Banco, config: Config) -> None:
             continue
         partes = texto.split()
         comando = partes[0].split("@")[0].lower() if partes else ""
-        if comando in ("/adicionar", "/remover") and len(partes) == 1:
+        if comando in (ADICIONAR, REMOVER) and len(partes) == 1:
             banco.definir_estado(CHAVE_PENDENTE, comando)
-            pergunta = "adicionar" if comando == "/adicionar" else "remover"
+            pergunta = "adicionar" if comando == ADICIONAR else "remover"
             telegram.enviar(config, f"Qual e-mail {pergunta}? (pode mandar vários)", pedir_resposta=True)
             continue
         pendente = banco.obter_estado(CHAVE_PENDENTE)
@@ -115,3 +125,8 @@ def processar_comandos(banco: Banco, config: Config) -> None:
                 continue
             texto = f"{pendente} {texto}"
         telegram.enviar(config, _executar(banco, config, texto))
+
+
+def registrar_menu(config: Config) -> None:
+    if config.telegram_configurado:
+        telegram.definir_comandos(config, [(c.lstrip("/"), d) for c, d in MENU])

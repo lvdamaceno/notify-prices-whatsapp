@@ -54,6 +54,19 @@ def mensagens_recebidas(config: Config, offset: int) -> list[dict]:
     return resp.json().get("result", [])
 
 
+def definir_comandos(config: Config, comandos: list[tuple[str, str]]) -> None:
+    """Substitui o menu de comandos do bot. Grava também nos escopos de grupo e privado, que têm
+    precedência sobre o padrão quando definidos (ex.: pelo BotFather)."""
+    lista = [{"command": c, "description": d} for c, d in comandos]
+    for escopo in ("default", "all_group_chats", "all_private_chats"):
+        resp = requests.post(
+            f"https://api.telegram.org/bot{config.telegram_bot_token}/setMyCommands",
+            json={"commands": lista, "scope": {"type": escopo}},
+            timeout=TIMEOUT,
+        )
+        resp.raise_for_status()
+
+
 def titulo(icone: str, texto: str) -> str:
     return f"{icone} <b>Monitor de preços</b> · {escape(texto)}"
 

@@ -80,11 +80,13 @@ As tabelas são criadas automaticamente:
 
 As variáveis marcadas como `sync: false` no `render.yaml` não têm valor no repositório. Os destinatários e as credenciais existem só no painel do Render, em **notifica-precos → Environment**. Para incluir ou tirar alguém da lista, mande um comando para o bot do Telegram (só o chat de `TELEGRAM_CHAT_ID` é aceito; mensagens de outros chats são ignoradas):
 
-- `/emails`: mostra a lista
-- `/adicionar joao ana@fornecedor.com.br`: inclui (basta o usuário para o domínio padrão)
-- `/remover joao`: tira da lista
+- `/listar_destinatarios_preco`: mostra a lista
+- `/adicionar_destinatario_preco joao ana@fornecedor.com.br`: inclui (basta o usuário para o domínio padrão)
+- `/remover_destinatario_preco joao`: tira da lista
 
 Tocar no comando pelo menu envia sem o e-mail; nesse caso o bot pergunta "Qual e-mail?" e a próxima mensagem é a resposta.
+
+O menu de comandos do bot é registrado automaticamente a cada deploy.
 
 O Cron Job lê os comandos no início de cada execução e responde no chat, então a mudança vale em até 10 minutos. A lista fica no banco (tabela `estado`, chave `email_destinatarios`). `EMAIL_DESTINATARIOS` só é usada enquanto ninguém mexeu na lista pelo Telegram; depois disso, editar a variável não muda mais nada.
 
