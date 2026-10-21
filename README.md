@@ -1,6 +1,6 @@
 # notify-prices-whatsapp
 
-Verifica no Sankhya, a cada 5 minutos, se algum preço de venda mudou e avisa por **e-mail**, usando o SMTP do Google Workspace da empresa. A consulta usa a API oficial do Sankhya (gateway OAuth 2.0).
+Verifica no Sankhya, a cada 10 minutos, se algum preço de venda mudou e avisa por **e-mail**, usando o SMTP do Google Workspace da empresa. A consulta usa a API oficial do Sankhya (gateway OAuth 2.0).
 
 > O projeto começou com notificação por WhatsApp, por isso o nome do repositório. A troca para e-mail aconteceu porque nem a Cloud API da Meta (grupos de até 8 participantes, exige OBA) nem a Blip (sem suporte a grupos) atendiam ao caso.
 
@@ -11,7 +11,7 @@ No Sankhya a tabela de preço (sempre a `CODTAB` 0) é **recriada a cada atualiz
 **Primeira carga** (`sql/codigos_produtos.sql` + `sql/precos_produtos.sql`) busca os códigos de todos os produtos ativos e, em lotes de `CARGA_LOTE_PRODUTOS` (padrão 500), pega o preço da versão mais recente que contém cada produto. Assim nenhum produto fica de fora, mesmo que não esteja na última cópia completa. Ela não notifica nada e:
 - mostra o andamento no log a cada lote: `lote 12/121 · produtos 5501 a 6000 · 6000/60099 produtos (10.0%) · 1m20s decorridos · ~12m00s restantes`;
 - salva cada lote à medida que termina. Se a execução cair no meio (timeout, Sankhya fora), a próxima continua do último produto concluído;
-- usa uma trava no Postgres (`pg_try_advisory_lock`), então, se passar dos 5 minutos, as execuções seguintes do cron saem sem fazer nada até ela terminar.
+- usa uma trava no Postgres (`pg_try_advisory_lock`), garantindo uma execução por vez também em execuções manuais (o próprio Render já adia a próxima execução do cron enquanto uma está ativa).
 
 **Carga completa** recalcula o preço vigente de todos os produtos, compara com a foto e notifica as diferenças. Para não varrer todo o histórico da `TGFEXC` (milhões de linhas, já que cada atualização recria a tabela), ela parte da **cópia completa mais recente**, que já traz todos os produtos:
 1. Conta os itens das versões mais novas, de 20 em 20, pelo índice de `NUTAB` (`sql/copias_completas.sql`). A primeira versão com pelo menos 10% dos produtos ativos (`sql/produtos_ativos.sql`) é a base; ajuste com `COPIA_COMPLETA_MIN_ITENS`.
@@ -22,7 +22,7 @@ Ela roda:
 - a cada `CARGA_COMPLETA_HORAS` (padrão 24h), para pegar edições feitas direto numa versão que já existia;
 - sob demanda, com `python main.py --carga-completa`.
 
-**Incremental**, a cada 5 minutos:
+**Incremental**, a cada 10 minutos:
 1. Lista as versões já em vigor (`sql/versoes_tabela.sql`) e separa as que ainda não foram processadas. Uma versão com vigor futuro só é processada quando entra em vigor.
 2. Lê os preços de cada versão nova (`sql/precos_versao.sql`) e sobrepõe à foto, produto a produto, da versão mais antiga para a mais nova. Uma versão retroativa não desfaz um preço mais recente.
 3. Notifica só o que mudou de valor:
@@ -86,7 +86,7 @@ As variáveis marcadas como `sync: false` no `render.yaml` não têm valor no re
 2. Gere a senha em https://myaccount.google.com/apppasswords e coloque em `SMTP_SENHA`.
 3. Se a opção não aparecer, o administrador do Workspace precisa permitir senhas de app (Admin Console → Segurança).
 
-O limite do Gmail é de 2.000 e-mails por dia por conta. O monitor envia no máximo um e-mail a cada 5 minutos (288 por dia), e só quando há alteração.
+O limite do Gmail é de 2.000 e-mails por dia por conta. O monitor envia no máximo um e-mail a cada 10 minutos (144 por dia), e só quando há alteração.
 
 ## Aviso de deploy
 
@@ -98,7 +98,7 @@ Se a primeira execução falhar, os erros seguintes do mesmo tipo não geram avi
 
 ## Avisos no Telegram
 
-Opcionais: sem `TELEGRAM_BOT_TOKEN` e `TELEGRAM_CHAT_ID`, nada é enviado. Para não avisar a cada 5 minutos, só os eventos relevantes geram mensagem:
+Opcionais: sem `TELEGRAM_BOT_TOKEN` e `TELEGRAM_CHAT_ID`, nada é enviado. Para não avisar a cada 10 minutos, só os eventos relevantes geram mensagem:
 
 | Evento | Aviso |
 |---|---|
@@ -106,7 +106,7 @@ Opcionais: sem `TELEGRAM_BOT_TOKEN` e `TELEGRAM_CHAT_ID`, nada é enviado. Para 
 | Preço alterado (e-mail enviado) | ✅ quantidade de alterações, NUTAB e destinatários |
 | Deploy | 🚀 resultado da primeira execução (veja *Aviso de deploy*) |
 | Carga completa (reconciliação diária, `--carga-completa`) | 🔄 motivo, total de preços e alterações |
-| Erro | ❌ só o **primeiro** de cada tipo. Com o Sankhya fora por horas, chega um aviso, não um a cada 5 minutos |
+| Erro | ❌ só o **primeiro** de cada tipo. Com o Sankhya fora por horas, chega um aviso, não um a cada 10 minutos |
 | Volta a funcionar depois de um erro | ✅ "voltou a funcionar" |
 
 Para configurar:
@@ -120,7 +120,7 @@ Uma falha no Telegram só é registrada no log e nunca interrompe o monitor nem 
 
 O disco dos serviços do Render é apagado a cada deploy ou reinício, e Cron Jobs não aceitam disco persistente. Por isso os dados ficam num **Render Postgres**. O `render.yaml` cria:
 
-- **Cron Job** `notifica-precos`: roda `python main.py` com o schedule `*/5 * * * *`. O Render cobra por minuto de execução. O envio de e-mail pelas portas 465 e 587 funciona porque o Cron Job é um serviço pago; os serviços gratuitos bloqueiam SMTP.
+- **Cron Job** `notifica-precos`: roda `python main.py` com o schedule `*/10 * * * *` (o mínimo do cron é 1 minuto: `* * * * *`). O Render cobra por segundo de execução, com mínimo de US$ 1/mês, e nunca roda duas execuções ao mesmo tempo. O envio de e-mail pelas portas 465 e 587 funciona porque o Cron Job é um serviço pago; os serviços gratuitos bloqueiam SMTP.
 - **Postgres** `notifica-precos-db` (plano `basic-256mb`): o `DATABASE_URL` é ligado ao Cron Job pela rede interna.
 
 > Não use o Postgres **Free** do Render: ele expira 30 dias depois de criado e é apagado depois de mais 14 dias, junto com o histórico.

@@ -117,7 +117,7 @@ def carregar() -> Config:
         render_git_branch=os.getenv("RENDER_GIT_BRANCH", "").strip(),
         render_repo_slug=os.getenv("RENDER_GIT_REPO_SLUG", "").strip(),
         render_servico=os.getenv("RENDER_SERVICE_NAME", "").strip(),
-        intervalo_minutos=int(os.getenv("INTERVALO_MINUTOS", "5")),
+        intervalo_minutos=int(os.getenv("INTERVALO_MINUTOS", "10")),
         max_itens_email=int(os.getenv("MAX_ITENS_EMAIL", "500")),
         carga_completa_horas=int(os.getenv("CARGA_COMPLETA_HORAS", "24")),
         # Itens mínimos para uma versão contar como cópia completa; 0 = 10% dos produtos ativos.

@@ -1,4 +1,4 @@
-# Blueprint do Render: Cron Job a cada 5 minutos + Postgres para o snapshot, o histórico e os logs.
+# Blueprint do Render: Cron Job a cada 10 minutos + Postgres para o snapshot, o histórico e os logs.
 # No painel: New > Blueprint > selecione o repositório. As variáveis com sync: false são pedidas na criação.
 services:
   - type: cron
@@ -6,7 +6,7 @@ services:
     runtime: python
     region: virginia
     plan: starter
-    schedule: "*/5 * * * *"
+    schedule: "*/10 * * * *"
     buildCommand: pip install -r requirements.txt
     startCommand: python main.py
     envVars:
