@@ -130,18 +130,23 @@ def exemplo() -> list[Alteracao]:
 
 
 def csv_completo(alteracoes: list[Alteracao]) -> bytes:
-    """Todas as alterações, separadas por ';' e com BOM para abrir direto no Excel em português."""
+    """Todas as alterações, com as mesmas colunas da tabela do corpo do e-mail.
+
+    Separado por ';' e com BOM para abrir direto no Excel em português.
+    """
+    def numero(valor: float) -> str:
+        return f"{valor:.2f}".replace(".", ",")
+
     saida = io.StringIO()
     escritor = csv.writer(saida, delimiter=";")
-    escritor.writerow(["CODTAB", "CODPROD", "MODELO", "PRODUTO", "CODLOCAL", "CONTROLE", "NUTAB",
-                       "PRECO_ANTERIOR", "PRECO_NOVO", "VARIACAO_PCT"])
+    escritor.writerow(["Código", "Modelo", "Produto", "Preço anterior", "Preço novo", "Variação (%)"])
     for a in _ordenar(alteracoes):
-        anterior = f"{a.anterior.vlrvenda:.2f}".replace(".", ",") if a.anterior else ""
         pct = a.variacao_pct
         escritor.writerow([
-            a.atual.codtab, a.atual.codprod, a.atual.modelo, a.atual.descrprod, a.atual.codlocal, a.atual.controle.strip(),
-            a.atual.nutab, anterior, f"{a.atual.vlrvenda:.2f}".replace(".", ","),
-            f"{pct:.2f}".replace(".", ",") if pct is not None else "",
+            a.atual.codprod, a.atual.modelo, _produto(a),
+            numero(a.anterior.vlrvenda) if a.anterior else "novo",
+            numero(a.atual.vlrvenda),
+            numero(pct) if pct is not None else "",
         ])
     return saida.getvalue().encode("utf-8-sig")
 

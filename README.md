@@ -36,8 +36,8 @@ A autenticação no Sankhya é feita em `POST {SANKHYA_BASE_URL}/authenticate` (
 ### O e-mail
 
 - **Assunto:** `Atualização de preços de venda: 2 alterado(s), 1 novo(s) (21/10/2026 10:19)`.
-- **Corpo em HTML:** uma tabela com tabela de preço, código, produto, preço anterior, preço novo e variação, com alta em vermelho e queda em verde. Também vai uma versão em texto simples.
-- **Anexo CSV** (`;`, UTF-8, abre direto no Excel) com **todas** as alterações. A tabela do corpo mostra no máximo `MAX_ITENS_EMAIL` itens.
+- **Corpo em HTML:** uma tabela com código, modelo, produto, preço anterior, preço novo e variação, com alta em vermelho e queda em verde. Também vai uma versão em texto simples.
+- **Anexo CSV** (`;`, UTF-8, abre direto no Excel) com **todas** as alterações, nas mesmas colunas da tabela do corpo. A tabela do corpo mostra no máximo `MAX_ITENS_EMAIL` itens.
 
 ### Banco de dados
 
