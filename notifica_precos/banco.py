@@ -41,6 +41,18 @@ CREATE TABLE IF NOT EXISTS logs (
     criado_em TIMESTAMPTZ, nivel TEXT, origem TEXT, mensagem TEXT
 );
 CREATE INDEX IF NOT EXISTS logs_criado_em ON logs (criado_em);
+CREATE TABLE IF NOT EXISTS promocoes (
+    codtab INTEGER, codprod BIGINT, codlocal BIGINT, controle TEXT, local_promo BIGINT,
+    nupromocao BIGINT, descricao TEXT, percentual DOUBLE PRECISION, vlrdesc DOUBLE PRECISION,
+    vlrfixo DOUBLE PRECISION, dtinicial TEXT, dtfinal TEXT, preco_base DOUBLE PRECISION,
+    preco_promo DOUBLE PRECISION, descrprod TEXT, modelo TEXT,
+    PRIMARY KEY (codtab, codprod, codlocal, controle, local_promo)
+);
+CREATE TABLE IF NOT EXISTS historico_promocoes (
+    id BIGSERIAL PRIMARY KEY,
+    detectado_em TIMESTAMPTZ, tipo TEXT, codprod BIGINT, codlocal BIGINT, controle TEXT, local_promo BIGINT,
+    nupromocao BIGINT, descricao TEXT, preco_base DOUBLE PRECISION, preco_promo DOUBLE PRECISION, notificado BOOLEAN
+);
 """
 
 DDL_SQLITE = """
@@ -63,6 +75,17 @@ CREATE TABLE IF NOT EXISTS logs (
     criado_em TEXT, nivel TEXT, origem TEXT, mensagem TEXT
 );
 CREATE INDEX IF NOT EXISTS logs_criado_em ON logs (criado_em);
+CREATE TABLE IF NOT EXISTS promocoes (
+    codtab INTEGER, codprod INTEGER, codlocal INTEGER, controle TEXT, local_promo INTEGER,
+    nupromocao INTEGER, descricao TEXT, percentual REAL, vlrdesc REAL, vlrfixo REAL,
+    dtinicial TEXT, dtfinal TEXT, preco_base REAL, preco_promo REAL, descrprod TEXT, modelo TEXT,
+    PRIMARY KEY (codtab, codprod, codlocal, controle, local_promo)
+);
+CREATE TABLE IF NOT EXISTS historico_promocoes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    detectado_em TEXT, tipo TEXT, codprod INTEGER, codlocal INTEGER, controle TEXT, local_promo INTEGER,
+    nupromocao INTEGER, descricao TEXT, preco_base REAL, preco_promo REAL, notificado INTEGER
+);
 """
 
 

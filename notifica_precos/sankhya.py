@@ -122,3 +122,7 @@ class Sankhya:
     def precos_versao(self, nutab: int) -> list[dict]:
         """Preços contidos em uma versão específica da tabela."""
         return self.consultar(self._sql("precos_versao.sql", nutab=nutab))
+
+    def promocoes_vigentes(self) -> list[dict]:
+        """Promoções da TGFDES em vigor hoje, uma linha por produto (inclui as por grupo de desconto)."""
+        return self.consultar(self._sql("promocoes_vigentes.sql"))

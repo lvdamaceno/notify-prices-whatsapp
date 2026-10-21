@@ -1,10 +1,12 @@
-"""Monta o e-mail de alteração de preços: assunto, texto simples, HTML e CSV completo."""
+"""Monta os e-mails de alteração de preços e de promoções: assunto, texto simples, HTML e CSV completo."""
 
 import csv
 import io
 from datetime import datetime
 from html import escape
 
+from . import promocoes as promo
+from .promocoes import Evento, Promocao
 from .snapshot import Alteracao, Preco
 
 COR_ALTA = "#c62828"
@@ -47,6 +49,14 @@ def _resumo(alteracoes: list[Alteracao]) -> str:
     if novos:
         partes.append(f"{novos} novo(s)")
     return ", ".join(partes)
+
+
+def _rodape_html() -> str:
+    link = f'<a href="mailto:{EMAIL_CANCELAMENTO}" style="color:#888">{EMAIL_CANCELAMENTO}</a>'
+    return (
+        '<p style="margin-top:24px;color:#888;font-size:12px">Enviado automaticamente pelo monitor de preços do Sankhya.</p>\n'
+        f'<p style="margin-top:4px;color:#888;font-size:12px">{escape(AVISO_CANCELAMENTO).replace(EMAIL_CANCELAMENTO, link)}</p>'
+    )
 
 
 def assunto(alteracoes: list[Alteracao]) -> str:
@@ -112,8 +122,7 @@ def html(alteracoes: list[Alteracao], max_itens: int, origem: str = "") -> str:
 <tbody>{''.join(linhas)}</tbody>
 </table>
 {restante}
-<p style="margin-top:24px;color:#888;font-size:12px">Enviado automaticamente pelo monitor de preços do Sankhya.</p>
-<p style="margin-top:4px;color:#888;font-size:12px">{escape(AVISO_CANCELAMENTO).replace(EMAIL_CANCELAMENTO, f'<a href="mailto:{EMAIL_CANCELAMENTO}" style="color:#888">{EMAIL_CANCELAMENTO}</a>')}</p>
+{_rodape_html()}
 </body></html>"""
 
 
@@ -204,3 +213,154 @@ def deploy(config, precos: int | None, alteracoes: int | None, erro: BaseExcepti
 <p style="margin-top:24px;color:#888;font-size:12px">Enviado automaticamente pelo monitor de preços do Sankhya.</p>
 </body></html>"""
     return assunto, texto, html
+
+
+# --- Promoções ---------------------------------------------------------------------------------
+
+SITUACAO = {promo.INICIO: "Entrou em promoção", promo.ALTERADA: "Desconto alterado", promo.FIM: "Promoção encerrada"}
+ORDEM_SITUACAO = {promo.INICIO: 0, promo.ALTERADA: 1, promo.FIM: 2}
+
+
+def _data(iso: str) -> str:
+    return f"{iso[8:10]}/{iso[5:7]}/{iso[:4]}" if iso else ""
+
+
+def _desconto(p: Promocao) -> str:
+    if p.vlrfixo > 0:
+        return "preço fixo"
+    if p.percentual > 0:
+        return f"{p.percentual:g}%".replace(".", ",")
+    return moeda(p.vlrdesc)
+
+
+def _produto_promo(p: Promocao) -> str:
+    descr = p.descrprod
+    if p.codlocal or p.controle.strip():
+        descr += f" (local {p.codlocal}{', ' + p.controle.strip() if p.controle.strip() else ''})"
+    return descr
+
+
+def _periodo(e: Evento) -> str:
+    p = e.promo
+    if e.tipo == promo.FIM:
+        # Antes do último dia, a promoção foi apagada, desativada ou o produto saiu do grupo no Sankhya.
+        if p.dtfinal and p.dtfinal[:10] < datetime.now().date().isoformat():
+            return f"venceu em {_data(p.dtfinal)}"
+        return "encerrada no Sankhya"
+    fim = f"até {_data(p.dtfinal)}" if p.dtfinal else "sem data final"
+    return f"{fim}{f' · só no local {p.local_promo}' if p.local_promo else ''}"
+
+
+def _ordenar_eventos(eventos: list[Evento]) -> list[Evento]:
+    return sorted(eventos, key=lambda e: (ORDEM_SITUACAO[e.tipo], e.promo.descrprod, e.promo.codprod))
+
+
+def _resumo_promocoes(eventos: list[Evento]) -> str:
+    nomes = {promo.INICIO: "iniciada(s)", promo.ALTERADA: "alterada(s)", promo.FIM: "encerrada(s)"}
+    return ", ".join(f"{n} {nomes[t]}" for t in nomes if (n := sum(1 for e in eventos if e.tipo == t)))
+
+
+def assunto_promocoes(eventos: list[Evento]) -> str:
+    return f"Promoções de preço: {_resumo_promocoes(eventos)} ({datetime.now():%d/%m/%Y %H:%M})"
+
+
+def texto_promocoes(eventos: list[Evento], max_itens: int) -> str:
+    linhas = [f"Promoções de preço - {datetime.now():%d/%m/%Y %H:%M} - {_resumo_promocoes(eventos)}", ""]
+    for e in _ordenar_eventos(eventos)[:max_itens]:
+        p = e.promo
+        if e.tipo == promo.FIM:
+            valores = f"preço de venda volta a {moeda(e.preco_atual)} (com desconto era {moeda(p.preco_promo)})"
+        else:
+            valores = f"{moeda(e.preco_atual)} -> {moeda(p.preco_promo)} ({_desconto(p)} de desconto)"
+        linhas.append(
+            f"{SITUACAO[e.tipo]} | {p.codprod}{' | ' + p.modelo if p.modelo else ''} | {_produto_promo(p)} | "
+            f"{valores} | {_periodo(e)}"
+        )
+    if len(eventos) > max_itens:
+        linhas += ["", f"...e mais {len(eventos) - max_itens} item(ns). Lista completa no CSV anexo."]
+    linhas += ["", AVISO_CANCELAMENTO]
+    return "\n".join(linhas)
+
+
+def html_promocoes(eventos: list[Evento], max_itens: int) -> str:
+    celula = 'style="padding:6px 10px;border-bottom:1px solid #e0e0e0"'
+    numero = 'style="padding:6px 10px;border-bottom:1px solid #e0e0e0;text-align:right;white-space:nowrap"'
+    cores = {promo.INICIO: COR_QUEDA, promo.ALTERADA: "#ef6c00", promo.FIM: "#555"}
+
+    linhas = []
+    for e in _ordenar_eventos(eventos)[:max_itens]:
+        p = e.promo
+        if e.tipo == promo.FIM:
+            sem = f"<strong>{moeda(e.preco_atual)}</strong>"
+            com = f"<s>{moeda(p.preco_promo)}</s>"
+        else:
+            sem = moeda(e.preco_atual)
+            com = f"<strong>{moeda(p.preco_promo)}</strong>"
+            if e.anterior:
+                com += f'<br><span style="color:#888;font-size:12px">antes {moeda(e.anterior.preco_promo)}</span>'
+        linhas.append(
+            f'<tr><td {celula}><span style="color:{cores[e.tipo]}">{SITUACAO[e.tipo]}</span></td>'
+            f"<td {numero}>{p.codprod}</td><td {celula}>{escape(p.modelo)}</td>"
+            f"<td {celula}>{escape(_produto_promo(p))}</td><td {numero}>{sem}</td><td {numero}>{com}</td>"
+            f"<td {numero}>{_desconto(p)}</td><td {celula}>{escape(_periodo(e))}</td></tr>"
+        )
+
+    restante = ""
+    if len(eventos) > max_itens:
+        restante = (
+            f'<p style="color:#555">…e mais {len(eventos) - max_itens} item(ns). '
+            "A lista completa está no CSV anexo.</p>"
+        )
+    cabecalho = "".join(
+        f'<th style="padding:6px 10px;text-align:{alinhamento};border-bottom:2px solid #333">{titulo}</th>'
+        for titulo, alinhamento in [
+            ("Situação", "left"), ("Código", "right"), ("Modelo", "left"), ("Produto", "left"),
+            ("Preço sem desconto", "right"), ("Preço com desconto", "right"), ("Desconto", "right"),
+            ("Período", "left"),
+        ]
+    )
+    return f"""<!doctype html>
+<html><body style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#222">
+<h2 style="margin:0 0 4px">Promoções de preço</h2>
+<p style="margin:0 0 16px;color:#555">{datetime.now():%d/%m/%Y %H:%M} · {_resumo_promocoes(eventos)}</p>
+<table style="border-collapse:collapse">
+<thead><tr>{cabecalho}</tr></thead>
+<tbody>{''.join(linhas)}</tbody>
+</table>
+{restante}
+{_rodape_html()}
+</body></html>"""
+
+
+def csv_promocoes(eventos: list[Evento]) -> bytes:
+    """Todos os avisos de promoção, com as mesmas colunas da tabela do e-mail."""
+    def numero(valor: float) -> str:
+        return f"{valor:.2f}".replace(".", ",")
+
+    saida = io.StringIO()
+    escritor = csv.writer(saida, delimiter=";")
+    escritor.writerow(["Situação", "Código", "Modelo", "Produto", "Preço sem desconto", "Preço com desconto",
+                       "Desconto", "Período", "Promoção (NUPROMOCAO)", "Descrição da promoção"])
+    for e in _ordenar_eventos(eventos):
+        p = e.promo
+        escritor.writerow([
+            SITUACAO[e.tipo], p.codprod, p.modelo, _produto_promo(p), numero(e.preco_atual),
+            numero(p.preco_promo), _desconto(p), _periodo(e), p.nupromocao, p.descricao,
+        ])
+    return saida.getvalue().encode("utf-8-sig")
+
+
+def exemplo_promocoes() -> list[Evento]:
+    """Avisos fictícios para o --testar-email: início, desconto alterado e fim."""
+    def p(codprod, modelo, descr, base, final, pct=0.0, vlrdesc=0.0, fim="2026-12-31T00:00:00", local=0):
+        return Promocao(0, codprod, 0, " ", local, 9000 + codprod % 100, "PROMOÇÃO DE TESTE", pct, vlrdesc, 0.0,
+                        "2026-10-01T00:00:00", fim, base, final, descr, modelo)
+
+    return [
+        Evento(promo.INICIO, p(90001, "SF-3L-TESTE", "SOFÁ 3 LUGARES (EXEMPLO)", 2699.0, 2159.2, pct=20), preco_atual=2699.0),
+        Evento(promo.INICIO, p(90005, "RK-TESTE", "RACK (EXEMPLO)", 1299.0, 1199.0, vlrdesc=100, local=102), preco_atual=1299.0),
+        Evento(promo.ALTERADA, p(90002, "MC-120-TESTE", "MESA DE CENTRO (EXEMPLO)", 899.9, 629.93, pct=30),
+               p(90002, "MC-120-TESTE", "MESA DE CENTRO (EXEMPLO)", 899.9, 809.91, pct=10), preco_atual=899.9),
+        Evento(promo.FIM, p(90004, "CD-01-TESTE", "CADEIRA DE JANTAR (EXEMPLO)", 459.0, 413.1, pct=10,
+                            fim="2026-10-20T00:00:00"), preco_atual=459.0),
+    ]

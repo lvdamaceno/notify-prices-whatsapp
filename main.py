@@ -4,7 +4,7 @@ Uso:
     python main.py                   # um ciclo (para usar com cron a cada 10 min)
     python main.py --loop            # fica rodando, um ciclo a cada INTERVALO_MINUTOS
     python main.py --carga-completa  # recalcula todos os preços vigentes e compara com o banco
-    python main.py --testar-email    # envia um e-mail de exemplo (produtos fictícios) para EMAIL_DEPLOY
+    python main.py --testar-email    # envia os e-mails de exemplo (preços e promoções, fictícios) para EMAIL_DEPLOY
     python main.py --testar-telegram # envia um aviso de teste no Telegram
 """
 
@@ -17,7 +17,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime
 
 from notifica_precos import config as cfg
-from notifica_precos import destinatarios, envio_email, logs, mensagem, telegram
+from notifica_precos import destinatarios, envio_email, logs, mensagem, promocoes, telegram
 from notifica_precos.banco import Banco
 from notifica_precos.sankhya import Sankhya
 from notifica_precos.snapshot import (
@@ -49,10 +49,14 @@ class Resumo:
     alteracoes: int = 0
     email_enviado: bool = False
     diaria: bool = False  # reconciliação diária: só avisa se encontrar alteração
+    promocoes: int = 0  # avisos de promoção (início, alteração, fim)
+    promocoes_email: bool = False
+    promocoes_carregadas: int = 0  # primeira leitura das promoções: gravadas sem e-mail
 
     @property
     def relevante(self) -> bool:
-        return self.alteracoes > 0 or (self.completa and not self.diaria)
+        return (self.alteracoes > 0 or (self.completa and not self.diaria)
+                or self.promocoes > 0 or self.promocoes_carregadas > 0)
 
 
 def motivo_carga_completa(config: cfg.Config, snapshot: Snapshot, forcar: bool) -> str | None:
@@ -101,6 +105,46 @@ def notificar(config: cfg.Config, dif: Diferenca, origem: str) -> bool:
                  mensagem.csv_completo(alteracoes), "text/csv")],
     )
     return True
+
+
+def verificar_promocoes(config: cfg.Config, sankhya: Sankhya, snapshot: Snapshot, resumo: Resumo) -> None:
+    """Depois dos preços: compara as promoções vigentes com as do último ciclo e avisa por e-mail.
+    Na primeira vez só grava as que já existem, sem aviso."""
+    if snapshot.estado("carga_inicial_concluida") != "1":
+        return  # sem a foto de preços não há sobre o que calcular o desconto
+    precos = snapshot.precos()
+    atuais = promocoes.calcular(sankhya.promocoes_vigentes(), precos)
+    anteriores = promocoes.carregar(snapshot.banco)
+
+    if snapshot.estado("promocoes_carregadas") != "1":
+        promocoes.salvar(snapshot.banco, atuais, [], False, {"promocoes_carregadas": "1"})
+        log.info("Promoções: primeira leitura, %d preço(s) em promoção gravados sem aviso", len(atuais))
+        resumo.promocoes_carregadas = len(atuais)
+        return
+
+    eventos = promocoes.comparar(anteriores, atuais, precos)
+    if not eventos and atuais == anteriores:
+        log.info("Promoções: nenhuma mudança (%d preço(s) em promoção)", len(atuais))
+        return
+    for e in eventos:
+        log.info("PROMOCAO %s prod=%s local=%s nupromocao=%s preço=%s→%s %s", e.tipo, e.promo.codprod,
+                 e.promo.local_promo, e.promo.nupromocao, e.preco_atual, e.promo.preco_promo, e.promo.descrprod)
+
+    notificado = False
+    if eventos and config.email_configurado:
+        # Se o envio falhar, a exceção sobe antes de gravar: os mesmos avisos saem no próximo ciclo.
+        envio_email.enviar(
+            config,
+            mensagem.assunto_promocoes(eventos),
+            mensagem.texto_promocoes(eventos, config.max_itens_email),
+            mensagem.html_promocoes(eventos, config.max_itens_email),
+            anexos=[(f"promocoes_{time.strftime('%Y%m%d_%H%M')}.csv", mensagem.csv_promocoes(eventos), "text/csv")],
+        )
+        notificado = True
+    elif eventos:
+        log.warning("E-mail não configurado: avisos de promoção registrados apenas no log")
+    promocoes.salvar(snapshot.banco, atuais, eventos, notificado, {})
+    resumo.promocoes, resumo.promocoes_email = len(eventos), notificado
 
 
 def precos_vigentes(config: cfg.Config, sankhya: Sankhya, versoes: list[Versao]) -> dict[Chave, Preco]:
@@ -244,6 +288,7 @@ def ciclo(config: cfg.Config, sankhya: Sankhya, snapshot: Snapshot, forcar_compl
 
     motivo = motivo_carga_completa(config, snapshot, forcar_completa)
     resumo = carga_completa(config, sankhya, snapshot, motivo) if motivo else incremental(config, sankhya, snapshot)
+    verificar_promocoes(config, sankhya, snapshot, resumo)
     log.info("Ciclo concluído em %.1fs", time.monotonic() - inicio)
     return resumo
 
@@ -260,25 +305,36 @@ def avisar_sucesso(config: cfg.Config, snapshot: Snapshot, resumo: Resumo, segun
     if not resumo.relevante:
         return
 
-    if resumo.alteracoes == 0:
-        envio = "nenhum e-mail necessário"
-    elif resumo.email_enviado:
-        envio = f"e-mail enviado para {len(config.email_destinatarios)} destinatário(s)"
-    else:
-        envio = "⚠️ e-mail não configurado, alterações só no log"
+    def envio(enviado: bool) -> str:
+        if enviado:
+            return f"e-mail enviado para {len(config.email_destinatarios)} destinatário(s)"
+        return "⚠️ e-mail não configurado, só no log"
 
+    linhas = []
     if resumo.completa:
         linhas = [
             telegram.titulo("🔄", "carga completa"),
             f"Motivo: {resumo.detalhe}",
             f"{_num(resumo.precos)} preços vigentes · {_num(resumo.alteracoes)} alteração(ões)",
+            (envio(resumo.email_enviado) if resumo.alteracoes else "nenhum e-mail necessário").capitalize(),
         ]
-    else:
+    elif resumo.alteracoes:
         linhas = [
             telegram.titulo("✅", f"{_num(resumo.alteracoes)} preço(s) alterado(s)"),
             f"Versão nova da tabela: {resumo.detalhe}",
+            envio(resumo.email_enviado).capitalize(),
         ]
-    linhas += [envio.capitalize(), f"⏱ {segundos:.1f}s".replace(".", ",")]
+    if resumo.promocoes:
+        if not linhas:
+            linhas = [telegram.titulo("🏷", f"{_num(resumo.promocoes)} mudança(s) de promoção")]
+        else:
+            linhas.append(f"🏷 {_num(resumo.promocoes)} mudança(s) de promoção")
+        linhas.append(f"Promoções: {envio(resumo.promocoes_email)}")
+    if resumo.promocoes_carregadas:
+        if not linhas:
+            linhas = [telegram.titulo("🏷", "promoções carregadas")]
+        linhas.append(f"🏷 {_num(resumo.promocoes_carregadas)} preço(s) em promoção gravados (primeira leitura, sem e-mail)")
+    linhas.append(f"⏱ {segundos:.1f}s".replace(".", ","))
     telegram.enviar(config, "\n".join(linhas))
 
 
@@ -410,6 +466,15 @@ def main() -> int:
                 mensagem.texto(alteracoes, config.max_itens_email, origem),
                 mensagem.html(alteracoes, config.max_itens_email, origem),
                 anexos=[("alteracoes_precos_teste.csv", mensagem.csv_completo(alteracoes), "text/csv")],
+                destinatarios=config.email_deploy,
+            )
+            eventos = mensagem.exemplo_promocoes()
+            envio_email.enviar(
+                config,
+                "[TESTE] " + mensagem.assunto_promocoes(eventos),
+                mensagem.texto_promocoes(eventos, config.max_itens_email),
+                mensagem.html_promocoes(eventos, config.max_itens_email),
+                anexos=[("promocoes_teste.csv", mensagem.csv_promocoes(eventos), "text/csv")],
                 destinatarios=config.email_deploy,
             )
         except envio_email.EmailErro as erro:

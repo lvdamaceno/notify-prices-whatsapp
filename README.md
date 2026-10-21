@@ -39,6 +39,17 @@ A autenticação no Sankhya é feita em `POST {SANKHYA_BASE_URL}/authenticate` (
 - **Corpo em HTML:** uma tabela com código, modelo, produto, preço anterior, preço novo e variação, com alta em vermelho e queda em verde. Também vai uma versão em texto simples.
 - **Anexo CSV** (`;`, UTF-8, abre direto no Excel) com **todas** as alterações, nas mesmas colunas da tabela do corpo. A tabela do corpo mostra no máximo `MAX_ITENS_EMAIL` itens.
 
+### Promoções (TGFDES)
+
+Depois dos preços, cada ciclo lê as promoções vigentes da `TGFDES` e calcula o preço com desconto sobre o preço de tabela. Elas podem ser cadastradas de três jeitos:
+- **No produto:** `CODPROD` preenchido na promoção.
+- **Por grupo de desconto:** `CODPROD = 0`, e o `GRUPODESCPROD` da promoção é igual ao `GRUPODESCPROD` do produto na `TGFPRO`.
+- **Para todos os produtos:** `CODPROD = 0` com o grupo `***************`.
+
+O desconto é calculado assim: `VLRVENDA` vira o próprio preço, `PERCENTUAL` desconta a porcentagem e `VLRDESC` desconta o valor. As datas são por dia, e `DTFINAL` é o último dia da promoção. Ficam de fora as promoções restritas a um parceiro ou vendedor (ou ao grupo deles), porque não mudam o preço de venda geral. Promoções de um local (`CODLOCAL`) aparecem com "só no local N".
+
+Um e-mail separado (`Promoções de preço: 2 iniciada(s), 1 encerrada(s) ...`) vai para os mesmos destinatários quando um produto **entra em promoção**, quando o **desconto muda** e quando a promoção **acaba**. Nesse último caso, o e-mail informa o preço de venda sem desconto. Se só o preço de tabela mudar durante a promoção, o aviso sai no e-mail de preços, e não neste. Na primeira execução, as promoções que já estão vigentes são só gravadas, sem e-mail. Um produto sem preço na tabela monitorada não tem sobre o que calcular o desconto e fica de fora.
+
 ### Banco de dados
 
 | `DATABASE_URL` | Banco usado |
@@ -51,6 +62,8 @@ As tabelas são criadas automaticamente:
 - `versoes_processadas`: versões da tabela já aplicadas.
 - `estado`: última carga completa, último commit do deploy e versão do esquema.
 - `historico`: todas as alterações detectadas.
+- `promocoes`: preço com desconto de cada produto em promoção no último ciclo.
+- `historico_promocoes`: todos os inícios, alterações e fins de promoção detectados.
 - `logs`: os logs de execução.
 
 ## Variáveis de ambiente
@@ -151,7 +164,7 @@ Credenciais de sandbox do Sankhya só funcionam com o token de sandbox, e as de 
 ## Uso
 
 ```bash
-.venv/bin/python main.py --testar-email   # envia um e-mail de exemplo (produtos e preços fictícios) para EMAIL_DEPLOY
+.venv/bin/python main.py --testar-email   # envia os e-mails de exemplo (preços e promoções, fictícios) para EMAIL_DEPLOY
 .venv/bin/python main.py                  # roda um ciclo (é o que o Cron Job do Render executa)
 .venv/bin/python main.py --testar-telegram # envia um aviso de teste no Telegram
 .venv/bin/python main.py --carga-completa # recalcula todos os preços e compara com o banco
