@@ -44,6 +44,7 @@ class Preco:
     nutab: int
     dtvigor: str
     descrprod: str
+    modelo: str
     vlrvenda: float
 
     @property
@@ -90,6 +91,7 @@ def de_registro(r: dict) -> Preco:
         nutab=int(r["NUTAB"]),
         dtvigor=data_iso(r["DTVIGOR"]),
         descrprod=str(r["DESCRPROD"] or "").strip(),
+        modelo=str(r["AD_MODELOREF"] or "").strip(),
         vlrvenda=round(float(r["VLRVENDA"] or 0), 4),
     )
 
@@ -144,7 +146,7 @@ class Snapshot:
 
     def precos(self) -> dict[Chave, Preco]:
         linhas = self.banco.execute(
-            "SELECT codtab, codprod, codlocal, controle, nutab, dtvigor, descrprod, vlrvenda FROM precos"
+            "SELECT codtab, codprod, codlocal, controle, nutab, dtvigor, descrprod, modelo, vlrvenda FROM precos"
         ).fetchall()
         return {p.chave: p for p in (Preco(*l) for l in linhas)}
 
@@ -165,12 +167,12 @@ class Snapshot:
         agora = datetime.now().astimezone()
         with self.banco.transacao():
             self.banco.executemany(
-                "INSERT INTO precos (codtab, codprod, codlocal, controle, nutab, dtvigor, descrprod, vlrvenda)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+                "INSERT INTO precos (codtab, codprod, codlocal, controle, nutab, dtvigor, descrprod, modelo, vlrvenda)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
                 " ON CONFLICT (codtab, codprod, codlocal, controle) DO UPDATE SET"
                 " nutab = excluded.nutab, dtvigor = excluded.dtvigor,"
-                " descrprod = excluded.descrprod, vlrvenda = excluded.vlrvenda",
-                [(p.codtab, p.codprod, p.codlocal, p.controle, p.nutab, p.dtvigor, p.descrprod, p.vlrvenda)
+                " descrprod = excluded.descrprod, modelo = excluded.modelo, vlrvenda = excluded.vlrvenda",
+                [(p.codtab, p.codprod, p.codlocal, p.controle, p.nutab, p.dtvigor, p.descrprod, p.modelo, p.vlrvenda)
                  for p in dif.gravar],
             )
             self.banco.executemany(

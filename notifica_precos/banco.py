@@ -24,7 +24,7 @@ DDL_ESTADO = "CREATE TABLE IF NOT EXISTS estado (chave TEXT PRIMARY KEY, valor T
 DDL_POSTGRES = """
 CREATE TABLE IF NOT EXISTS precos (
     codtab INTEGER, codprod BIGINT, codlocal BIGINT, controle TEXT,
-    nutab BIGINT, dtvigor TEXT, descrprod TEXT, vlrvenda DOUBLE PRECISION,
+    nutab BIGINT, dtvigor TEXT, descrprod TEXT, modelo TEXT, vlrvenda DOUBLE PRECISION,
     PRIMARY KEY (codtab, codprod, codlocal, controle)
 );
 CREATE TABLE IF NOT EXISTS versoes_processadas (
@@ -46,7 +46,7 @@ CREATE INDEX IF NOT EXISTS logs_criado_em ON logs (criado_em);
 DDL_SQLITE = """
 CREATE TABLE IF NOT EXISTS precos (
     codtab INTEGER, codprod INTEGER, codlocal INTEGER, controle TEXT,
-    nutab INTEGER, dtvigor TEXT, descrprod TEXT, vlrvenda REAL,
+    nutab INTEGER, dtvigor TEXT, descrprod TEXT, modelo TEXT, vlrvenda REAL,
     PRIMARY KEY (codtab, codprod, codlocal, controle)
 );
 CREATE TABLE IF NOT EXISTS versoes_processadas (
@@ -105,6 +105,13 @@ class Banco:
             self.conn.execute(DDL_POSTGRES)
         else:
             self.conn.executescript(DDL_SQLITE)
+        # Coluna incluída depois do esquema 2; a carga completa do próximo deploy preenche.
+        colunas = {l[0] for l in self.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_name = 'precos'"
+            if self.postgres else "SELECT name FROM pragma_table_info('precos')"
+        ).fetchall()}
+        if "modelo" not in colunas:
+            self.conn.execute("ALTER TABLE precos ADD COLUMN modelo TEXT DEFAULT ''")
         self.definir_estado("esquema", VERSAO_ESQUEMA)
 
     def tentar_travar(self) -> bool:

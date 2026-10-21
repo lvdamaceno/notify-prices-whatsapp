@@ -60,7 +60,7 @@ def texto(alteracoes: list[Alteracao], max_itens: int, origem: str = "") -> str:
     for a in _ordenar(alteracoes)[:max_itens]:
         anterior = moeda(a.anterior.vlrvenda) if a.anterior else "novo"
         linhas.append(
-            f"Tab {a.atual.codtab} | {a.atual.codprod} - {_produto(a)} | "
+            f"{a.atual.codprod}{' | ' + a.atual.modelo if a.atual.modelo else ''} | {_produto(a)} | "
             f"{anterior} -> {moeda(a.atual.vlrvenda)} {percentual(a)}".rstrip()
         )
     if len(alteracoes) > max_itens:
@@ -80,7 +80,7 @@ def html(alteracoes: list[Alteracao], max_itens: int, origem: str = "") -> str:
             cor = COR_ALTA if a.atual.vlrvenda > a.anterior.vlrvenda else COR_QUEDA
             anterior = moeda(a.anterior.vlrvenda)
         linhas.append(
-            f"<tr><td {numero}>{a.atual.codtab}</td><td {numero}>{a.atual.codprod}</td>"
+            f"<tr><td {numero}>{a.atual.codprod}</td><td {celula}>{escape(a.atual.modelo)}</td>"
             f"<td {celula}>{escape(_produto(a))}</td><td {numero}>{anterior}</td>"
             f"<td {numero}><strong>{moeda(a.atual.vlrvenda)}</strong></td>"
             f'<td {numero}><span style="color:{cor}">{percentual(a)}</span></td></tr>'
@@ -96,7 +96,7 @@ def html(alteracoes: list[Alteracao], max_itens: int, origem: str = "") -> str:
     cabecalho = "".join(
         f'<th style="padding:6px 10px;text-align:{alinhamento};border-bottom:2px solid #333">{titulo}</th>'
         for titulo, alinhamento in [
-            ("Tabela", "right"), ("Código", "right"), ("Produto", "left"),
+            ("Código", "right"), ("Modelo", "left"), ("Produto", "left"),
             ("Preço anterior", "right"), ("Preço novo", "right"), ("Variação", "right"),
         ]
     )
@@ -117,13 +117,13 @@ def csv_completo(alteracoes: list[Alteracao]) -> bytes:
     """Todas as alterações, separadas por ';' e com BOM para abrir direto no Excel em português."""
     saida = io.StringIO()
     escritor = csv.writer(saida, delimiter=";")
-    escritor.writerow(["CODTAB", "CODPROD", "PRODUTO", "CODLOCAL", "CONTROLE", "NUTAB",
+    escritor.writerow(["CODTAB", "CODPROD", "MODELO", "PRODUTO", "CODLOCAL", "CONTROLE", "NUTAB",
                        "PRECO_ANTERIOR", "PRECO_NOVO", "VARIACAO_PCT"])
     for a in _ordenar(alteracoes):
         anterior = f"{a.anterior.vlrvenda:.2f}".replace(".", ",") if a.anterior else ""
         pct = a.variacao_pct
         escritor.writerow([
-            a.atual.codtab, a.atual.codprod, a.atual.descrprod, a.atual.codlocal, a.atual.controle.strip(),
+            a.atual.codtab, a.atual.codprod, a.atual.modelo, a.atual.descrprod, a.atual.codlocal, a.atual.controle.strip(),
             a.atual.nutab, anterior, f"{a.atual.vlrvenda:.2f}".replace(".", ","),
             f"{pct:.2f}".replace(".", ",") if pct is not None else "",
         ])
