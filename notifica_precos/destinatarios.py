@@ -19,9 +19,9 @@ ADICIONAR = "/adicionar_destinatario_preco"
 REMOVER = "/remover_destinatario_preco"
 # Menu do bot (setMyCommands), registrado a cada deploy para ficar igual ao código.
 MENU = [
-    (LISTAR, "Mostra quem recebe o e-mail de preços"),
-    (ADICIONAR, "Inclui destinatários (só o usuário ou o e-mail completo)"),
-    (REMOVER, "Tira destinatários da lista"),
+    (LISTAR, "Mostra destinatários da atualização de preços"),
+    (ADICIONAR, "Inclui destinatários para atualização de preços"),
+    (REMOVER, "Remove destinatários da atualização de preços"),
 ]
 
 CHAVE_LISTA = "email_destinatarios"
