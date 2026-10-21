@@ -145,13 +145,15 @@ def carga_inicial(config: cfg.Config, sankhya: Sankhya, snapshot: Snapshot) -> R
     # processada e é reaplicada no próximo ciclo (sem efeito se os preços já estiverem iguais).
     versoes = [versao_de_registro(r) for r in sankhya.versoes_tabela()]
     codigos = sankhya.codigos_produtos()
-    ate = int(snapshot.estado("carga_inicial_ate") or 0)
-    pendentes = [c for c in codigos if c > ate]
+    checkpoint = snapshot.estado("carga_inicial_ate")
+    # Sem checkpoint, processa todos (o Sankhya costuma ter um produto de código 0).
+    ate = int(checkpoint) if checkpoint else None
+    pendentes = codigos if ate is None else [c for c in codigos if c > ate]
     tamanho = config.carga_lote_produtos
     lotes = [pendentes[i:i + tamanho] for i in range(0, len(pendentes), tamanho)]
     feitos_antes = len(codigos) - len(pendentes)
 
-    if ate:
+    if ate is not None:
         log.info("Primeira carga: retomando após o produto %d (%d de %d já processados)", ate, feitos_antes, len(codigos))
     else:
         log.info("Primeira carga: %d produtos ativos em %d lote(s) de até %d", len(codigos), len(lotes), tamanho)
