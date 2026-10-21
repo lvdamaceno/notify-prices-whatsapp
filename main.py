@@ -81,6 +81,8 @@ def notificar(config: cfg.Config, dif: Diferenca, origem: str) -> bool:
     """Loga e envia o e-mail. Se o envio falhar, a exceção sobe e nada é gravado no banco,
     então as mesmas alterações são detectadas e reenviadas no próximo ciclo."""
     alteracoes = dif.alteracoes
+    # A origem (versão nova, carga completa de deploy etc.) fica só no log; quem recebe o e-mail não precisa dela.
+    log.info("%d alteração(ões) de preço (%s)", len(alteracoes), origem)
     if len(alteracoes) <= MAX_ALTERACOES_NO_LOG:
         for a in alteracoes:
             log.info(
@@ -99,8 +101,8 @@ def notificar(config: cfg.Config, dif: Diferenca, origem: str) -> bool:
     envio_email.enviar(
         config,
         mensagem.assunto(alteracoes),
-        mensagem.texto(alteracoes, config.max_itens_email, origem),
-        mensagem.html(alteracoes, config.max_itens_email, origem),
+        mensagem.texto(alteracoes, config.max_itens_email),
+        mensagem.html(alteracoes, config.max_itens_email),
         anexos=[(f"alteracoes_precos_{time.strftime('%Y%m%d_%H%M')}.csv",
                  mensagem.csv_completo(alteracoes), "text/csv")],
     )
@@ -468,13 +470,12 @@ def main() -> int:
         # Mesmo e-mail de uma alteração real, com produtos e preços fictícios. Vai só para
         # EMAIL_DEPLOY, para não chegar aos destinatários de preços.
         alteracoes = mensagem.exemplo()
-        origem = "TESTE: produtos e preços fictícios"
         try:
             envio_email.enviar(
                 config,
                 "[TESTE] " + mensagem.assunto(alteracoes),
-                mensagem.texto(alteracoes, config.max_itens_email, origem),
-                mensagem.html(alteracoes, config.max_itens_email, origem),
+                mensagem.texto(alteracoes, config.max_itens_email),
+                mensagem.html(alteracoes, config.max_itens_email),
                 anexos=[("alteracoes_precos_teste.csv", mensagem.csv_completo(alteracoes), "text/csv")],
                 destinatarios=config.email_deploy,
             )

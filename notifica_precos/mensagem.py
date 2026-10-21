@@ -64,11 +64,9 @@ def assunto(alteracoes: list[Alteracao]) -> str:
     return f"Atualização de preços de venda: {_resumo(alteracoes)} ({datetime.now():%d/%m/%Y %H:%M})"
 
 
-def texto(alteracoes: list[Alteracao], max_itens: int, origem: str = "") -> str:
+def texto(alteracoes: list[Alteracao], max_itens: int) -> str:
     """Versão em texto simples, para clientes de e-mail que não exibem HTML."""
     linhas = [f"Atualização de preços de venda - {datetime.now():%d/%m/%Y %H:%M} - {_resumo(alteracoes)}"]
-    if origem:
-        linhas.append(f"Detectado em: {origem}")
     linhas.append("")
     for a in _ordenar(alteracoes)[:max_itens]:
         anterior = moeda(a.anterior.vlrvenda) if a.anterior else "novo"
@@ -82,7 +80,7 @@ def texto(alteracoes: list[Alteracao], max_itens: int, origem: str = "") -> str:
     return "\n".join(linhas)
 
 
-def html(alteracoes: list[Alteracao], max_itens: int, origem: str = "") -> str:
+def html(alteracoes: list[Alteracao], max_itens: int) -> str:
     celula = 'style="padding:6px 10px;border-bottom:1px solid #e0e0e0"'
     numero = 'style="padding:6px 10px;border-bottom:1px solid #e0e0e0;text-align:right;white-space:nowrap"'
 
@@ -117,7 +115,7 @@ def html(alteracoes: list[Alteracao], max_itens: int, origem: str = "") -> str:
     return f"""<!doctype html>
 <html><body style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#222">
 <h2 style="margin:0 0 4px">Atualização de preços de venda</h2>
-<p style="margin:0 0 16px;color:#555">{datetime.now():%d/%m/%Y %H:%M} · {_resumo(alteracoes)}{' · ' + escape(origem) if origem else ''}</p>
+<p style="margin:0 0 16px;color:#555">{datetime.now():%d/%m/%Y %H:%M} · {_resumo(alteracoes)}</p>
 <table style="border-collapse:collapse">
 <thead><tr>{cabecalho}</tr></thead>
 <tbody>{''.join(linhas)}</tbody>
