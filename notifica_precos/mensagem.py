@@ -5,7 +5,7 @@ import io
 from datetime import datetime
 from html import escape
 
-from .snapshot import Alteracao
+from .snapshot import Alteracao, Preco
 
 COR_ALTA = "#c62828"
 COR_QUEDA = "#2e7d32"
@@ -111,6 +111,22 @@ def html(alteracoes: list[Alteracao], max_itens: int, origem: str = "") -> str:
 {restante}
 <p style="margin-top:24px;color:#888;font-size:12px">Enviado automaticamente pelo monitor de preços do Sankhya.</p>
 </body></html>"""
+
+
+def exemplo() -> list[Alteracao]:
+    """Alterações fictícias para o --testar-email: alta, queda, produto novo e item com local."""
+    def preco(codprod, modelo, descr, valor, nutab=1001, codlocal=0, controle=" "):
+        return Preco(0, codprod, codlocal, controle, nutab, "2026-01-01T00:00:00", descr, modelo, valor)
+
+    return [
+        Alteracao(preco(90001, "SF-3L-TESTE", "SOFÁ 3 LUGARES (EXEMPLO)", 2699.0, 1002),
+                  preco(90001, "SF-3L-TESTE", "SOFÁ 3 LUGARES (EXEMPLO)", 2499.0)),
+        Alteracao(preco(90002, "MC-120-TESTE", "MESA DE CENTRO (EXEMPLO)", 849.9, 1002),
+                  preco(90002, "MC-120-TESTE", "MESA DE CENTRO (EXEMPLO)", 899.9)),
+        Alteracao(preco(90003, "PT-AZ-TESTE", "POLTRONA AZUL (EXEMPLO)", 1299.0, 1002, 2, "LOTE A"),
+                  preco(90003, "PT-AZ-TESTE", "POLTRONA AZUL (EXEMPLO)", 1199.0, 1001, 2, "LOTE A")),
+        Alteracao(preco(90004, "CD-01-TESTE", "CADEIRA DE JANTAR (EXEMPLO)", 459.0, 1002), None),
+    ]
 
 
 def csv_completo(alteracoes: list[Alteracao]) -> bytes:

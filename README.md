@@ -141,7 +141,7 @@ Credenciais de sandbox do Sankhya só funcionam com o token de sandbox, e as de 
 ## Uso
 
 ```bash
-.venv/bin/python main.py --testar-email   # envia um e-mail de teste aos destinatários
+.venv/bin/python main.py --testar-email   # envia um e-mail de exemplo (produtos e preços fictícios)
 .venv/bin/python main.py                  # roda um ciclo (é o que o Cron Job do Render executa)
 .venv/bin/python main.py --testar-telegram # envia um aviso de teste no Telegram
 .venv/bin/python main.py --carga-completa # recalcula todos os preços e compara com o banco

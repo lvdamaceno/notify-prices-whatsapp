@@ -4,7 +4,7 @@ Uso:
     python main.py                   # um ciclo (para usar com cron a cada 10 min)
     python main.py --loop            # fica rodando, um ciclo a cada INTERVALO_MINUTOS
     python main.py --carga-completa  # recalcula todos os preços vigentes e compara com o banco
-    python main.py --testar-email    # envia um e-mail de teste aos destinatários
+    python main.py --testar-email    # envia um e-mail de exemplo (produtos fictícios)
     python main.py --testar-telegram # envia um aviso de teste no Telegram
 """
 
@@ -378,7 +378,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--loop", action="store_true", help="roda continuamente a cada INTERVALO_MINUTOS")
     parser.add_argument("--carga-completa", action="store_true", help="força a recarga de todos os preços vigentes")
-    parser.add_argument("--testar-email", action="store_true", help="envia um e-mail de teste aos destinatários")
+    parser.add_argument("--testar-email", action="store_true", help="envia um e-mail de exemplo, com produtos fictícios, aos destinatários")
     parser.add_argument("--testar-telegram", action="store_true", help="envia um aviso de teste no Telegram")
     args = parser.parse_args()
 
@@ -386,11 +386,16 @@ def main() -> int:
     logs.configurar()
 
     if args.testar_email:
+        # Mesmo e-mail de uma alteração real, com produtos e preços fictícios.
+        alteracoes = mensagem.exemplo()
+        origem = "TESTE: produtos e preços fictícios"
         try:
             envio_email.enviar(
                 config,
-                "Teste do monitor de preços do Sankhya",
-                "Se você recebeu este e-mail, o envio pelo SMTP está funcionando.",
+                "[TESTE] " + mensagem.assunto(alteracoes),
+                mensagem.texto(alteracoes, config.max_itens_email, origem),
+                mensagem.html(alteracoes, config.max_itens_email, origem),
+                anexos=[("alteracoes_precos_teste.csv", mensagem.csv_completo(alteracoes), "text/csv")],
             )
         except envio_email.EmailErro as erro:
             log.error("%s", erro)
