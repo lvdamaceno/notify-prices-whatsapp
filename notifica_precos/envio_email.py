@@ -23,14 +23,16 @@ def enviar(
     texto: str,
     html: str | None = None,
     anexos: list[tuple[str, bytes, str]] = (),  # (nome do arquivo, conteúdo, tipo MIME)
+    destinatarios: list[str] | None = None,  # padrão: EMAIL_DESTINATARIOS
 ) -> None:
-    if not config.email_configurado:
-        raise EmailErro("SMTP não configurado (defina SMTP_HOST e EMAIL_DESTINATARIOS)")
+    destinatarios = destinatarios if destinatarios is not None else config.email_destinatarios
+    if not config.smtp_host or not destinatarios:
+        raise EmailErro("SMTP não configurado ou sem destinatários (SMTP_HOST, EMAIL_DESTINATARIOS/EMAIL_DEPLOY)")
 
     msg = EmailMessage()
     msg["Subject"] = assunto
     msg["From"] = config.email_remetente
-    msg["To"] = ", ".join(config.email_destinatarios)
+    msg["To"] = ", ".join(destinatarios)
     msg["Date"] = formatdate(localtime=True)
     msg["Message-ID"] = make_msgid(domain=config.email_remetente.rsplit("@", 1)[-1].strip("> "))
     msg.set_content(texto)
@@ -60,4 +62,4 @@ def enviar(
     if recusados:
         # Pelo menos um destinatário recebeu; os recusados ficam registrados no log.
         log.warning("Destinatários recusados pelo servidor: %s", recusados)
-    log.info("E-mail enviado para %d destinatário(s): %s", len(config.email_destinatarios), assunto)
+    log.info("E-mail enviado para %d destinatário(s): %s", len(destinatarios), assunto)

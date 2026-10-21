@@ -40,8 +40,16 @@ services:
         sync: false
       - key: EMAIL_DESTINATARIOS
         sync: false
+      - key: EMAIL_DEPLOY
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
       - key: MAX_ITENS_EMAIL
         value: "500"
+      - key: CARGA_COMPLETA_HORAS
+        value: "24"
       - key: LOG_DIAS_RETENCAO
         value: "90"
 

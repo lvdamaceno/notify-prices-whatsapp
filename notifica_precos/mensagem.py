@@ -15,6 +15,10 @@ def moeda(valor: float) -> str:
     return "R$ " + f"{valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
+def milhar(n: int) -> str:
+    return f"{n:,}".replace(",", ".")
+
+
 def percentual(a: Alteracao) -> str:
     pct = a.variacao_pct
     return f"{pct:+.2f}%".replace(".", ",") if pct is not None else ""
@@ -47,9 +51,12 @@ def assunto(alteracoes: list[Alteracao]) -> str:
     return f"Atualização de preços de venda: {_resumo(alteracoes)} ({datetime.now():%d/%m/%Y %H:%M})"
 
 
-def texto(alteracoes: list[Alteracao], max_itens: int) -> str:
+def texto(alteracoes: list[Alteracao], max_itens: int, origem: str = "") -> str:
     """Versão em texto simples, para clientes de e-mail que não exibem HTML."""
-    linhas = [f"Atualização de preços de venda - {datetime.now():%d/%m/%Y %H:%M} - {_resumo(alteracoes)}", ""]
+    linhas = [f"Atualização de preços de venda - {datetime.now():%d/%m/%Y %H:%M} - {_resumo(alteracoes)}"]
+    if origem:
+        linhas.append(f"Detectado em: {origem}")
+    linhas.append("")
     for a in _ordenar(alteracoes)[:max_itens]:
         anterior = moeda(a.anterior.vlrvenda) if a.anterior else "novo"
         linhas.append(
@@ -61,7 +68,7 @@ def texto(alteracoes: list[Alteracao], max_itens: int) -> str:
     return "\n".join(linhas)
 
 
-def html(alteracoes: list[Alteracao], max_itens: int) -> str:
+def html(alteracoes: list[Alteracao], max_itens: int, origem: str = "") -> str:
     celula = 'style="padding:6px 10px;border-bottom:1px solid #e0e0e0"'
     numero = 'style="padding:6px 10px;border-bottom:1px solid #e0e0e0;text-align:right;white-space:nowrap"'
 
@@ -96,7 +103,7 @@ def html(alteracoes: list[Alteracao], max_itens: int) -> str:
     return f"""<!doctype html>
 <html><body style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#222">
 <h2 style="margin:0 0 4px">Atualização de preços de venda</h2>
-<p style="margin:0 0 16px;color:#555">{datetime.now():%d/%m/%Y %H:%M} · {_resumo(alteracoes)}</p>
+<p style="margin:0 0 16px;color:#555">{datetime.now():%d/%m/%Y %H:%M} · {_resumo(alteracoes)}{' · ' + escape(origem) if origem else ''}</p>
 <table style="border-collapse:collapse">
 <thead><tr>{cabecalho}</tr></thead>
 <tbody>{''.join(linhas)}</tbody>
@@ -121,3 +128,53 @@ def csv_completo(alteracoes: list[Alteracao]) -> bytes:
             f"{pct:.2f}".replace(".", ",") if pct is not None else "",
         ])
     return saida.getvalue().encode("utf-8-sig")
+
+
+def deploy(config, precos: int | None, alteracoes: int | None, erro: BaseException | None,
+           segundos: float) -> tuple[str, str, str]:
+    """Aviso de deploy para a equipe de TI: (assunto, texto, html)."""
+    commit = config.render_git_commit[:7]
+    status = "falha na primeira execução" if erro else "sucesso"
+    link = (f"https://github.com/{config.render_repo_slug}/commit/{config.render_git_commit}"
+            if config.render_repo_slug else "")
+
+    if erro:
+        resultado = f"A primeira execução falhou: {type(erro).__name__}: {erro}"
+    else:
+        resultado = (f"Carga completa concluída em {f'{segundos:.1f}'.replace('.', ',')}s: "
+                     f"{milhar(precos)} preços vigentes, {milhar(alteracoes)} alteração(ões).")
+        if alteracoes:
+            resultado += " As alterações foram enviadas aos destinatários de preços."
+
+    dados = [
+        ("Data", f"{datetime.now():%d/%m/%Y %H:%M}"),
+        ("Serviço", config.render_servico or "-"),
+        ("Branch", config.render_git_branch or "-"),
+        ("Commit", commit),
+        ("Tabelas monitoradas", ", ".join(map(str, config.sankhya_codtabs)) or "todas"),
+        ("Destinatários de preços", ", ".join(config.email_destinatarios) or "nenhum (só log)"),
+        ("Reconciliação completa", f"a cada {config.carga_completa_horas}h" if config.carga_completa_horas else "só em deploy"),
+        ("Telegram", "ativo" if config.telegram_configurado else "não configurado"),
+    ]
+
+    assunto = f"Deploy do monitor de preços: {commit} ({status})"
+    texto = "\n".join(
+        [f"Novo deploy do monitor de preços do Sankhya ({status}).", "", resultado, ""]
+        + [f"{k}: {v}" for k, v in dados]
+        + ([f"Mudanças: {link}"] if link else [])
+    )
+    cor = COR_ALTA if erro else COR_QUEDA
+    commit_html = f'<a href="{escape(link)}">{commit}</a>' if link else commit
+    linhas = "".join(
+        f'<tr><td style="padding:4px 12px 4px 0;color:#555">{k}</td>'
+        f"<td>{commit_html if k == 'Commit' else escape(str(v))}</td></tr>"
+        for k, v in dados
+    )
+    html = f"""<!doctype html>
+<html><body style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#222">
+<h2 style="margin:0 0 4px">Deploy do monitor de preços</h2>
+<p style="margin:0 0 16px"><strong style="color:{cor}">{escape(status.capitalize())}</strong> · {escape(resultado)}</p>
+<table style="border-collapse:collapse">{linhas}</table>
+<p style="margin-top:24px;color:#888;font-size:12px">Enviado automaticamente pelo monitor de preços do Sankhya.</p>
+</body></html>"""
+    return assunto, texto, html

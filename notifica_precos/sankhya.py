@@ -83,11 +83,26 @@ class Sankhya:
                 return registros
             offset += TAMANHO_PAGINA
 
-    def precos_venda(self) -> list[dict]:
-        sql = (RAIZ / "sql" / "precos_venda.sql").read_text(encoding="utf-8")
+    def _sql(self, arquivo: str, **valores: int) -> str:
+        sql = (RAIZ / "sql" / arquivo).read_text(encoding="utf-8")
+        # Remove os comentários de linha para não atrapalhar a cláusula de paginação.
+        sql = "\n".join(l for l in sql.splitlines() if not l.strip().startswith("--"))
         filtro = ""
         if self.config.sankhya_codtabs:
             filtro = f"AND TAB.CODTAB IN ({', '.join(map(str, self.config.sankhya_codtabs))})"
-        # Remove os comentários de linha para não atrapalhar a cláusula de paginação.
-        sql = "\n".join(l for l in sql.splitlines() if not l.strip().startswith("--"))
-        return self.consultar(sql.replace("{filtro_tabelas}", filtro).strip())
+        sql = sql.replace("{filtro_tabelas}", filtro)
+        for nome, valor in valores.items():
+            sql = sql.replace("{" + nome + "}", str(int(valor)))
+        return sql.strip()
+
+    def precos_vigentes(self) -> list[dict]:
+        """Preço vigente de todos os produtos (carga completa)."""
+        return self.consultar(self._sql("precos_vigentes.sql"))
+
+    def versoes_tabela(self) -> list[dict]:
+        """Versões (NUTAB) já em vigor das tabelas monitoradas."""
+        return self.consultar(self._sql("versoes_tabela.sql"))
+
+    def precos_versao(self, nutab: int) -> list[dict]:
+        """Preços contidos em uma versão específica da tabela."""
+        return self.consultar(self._sql("precos_versao.sql", nutab=nutab))

@@ -6,13 +6,24 @@ Verifica no Sankhya, a cada 5 minutos, se algum preço de venda mudou e avisa po
 
 ## Como funciona
 
-1. Autentica em `POST {SANKHYA_BASE_URL}/authenticate`, mandando o `X-Token` no header e o corpo `client_credentials` em form-urlencoded.
-2. Roda `sql/precos_venda.sql` via `DbExplorerSP.executeQuery`, com paginação `OFFSET/FETCH`. A query traz o `VLRVENDA` (TGFEXC) da versão vigente (maior `DTVIGOR` já em vigor) de cada tabela de preço (`CODTAB`), só para produtos ativos.
-3. Compara o resultado com a última foto salva no banco (tabela `precos`). A comparação é necessária porque a TGFEXC não tem data de alteração.
-4. Se houver diferença, envia o e-mail, grava só as linhas que mudaram e registra cada alteração na tabela `historico`.
-5. Se o envio falhar, a foto **não** é atualizada, e a alteração é detectada e enviada de novo no próximo ciclo.
+No Sankhya a tabela de preço (sempre a `CODTAB` 0) é **recriada a cada atualização**: cada vez que alguém muda um preço nasce uma nova versão (`NUTAB` na `TGFTAB`). Essa versão pode trazer **só os produtos alterados** ou **uma cópia de todos**. Então o preço vigente de um produto é o da versão mais recente (maior `DTVIGOR` já em vigor, com desempate pelo `NUTAB`) **que contém aquele produto**. O banco guarda essa foto completa, com cerca de 60 mil preços, e o script trabalha de dois jeitos:
 
-A primeira execução só cria a foto inicial e não envia nada.
+**Carga completa** (`sql/precos_vigentes.sql`) recalcula no Sankhya o preço vigente de todos os produtos, compara com a foto e notifica as diferenças. Ela roda:
+- na primeira execução, quando só salva a foto e não notifica;
+- a cada **deploy** no Render (detectado pelo `RENDER_GIT_COMMIT`);
+- a cada `CARGA_COMPLETA_HORAS` (padrão 24h), para pegar edições feitas direto numa versão que já existia;
+- sob demanda, com `python main.py --carga-completa`.
+
+**Incremental**, a cada 5 minutos:
+1. Lista as versões já em vigor (`sql/versoes_tabela.sql`) e separa as que ainda não foram processadas. Uma versão com vigor futuro só é processada quando entra em vigor.
+2. Lê os preços de cada versão nova (`sql/precos_versao.sql`) e sobrepõe à foto, produto a produto, da versão mais antiga para a mais nova. Uma versão retroativa não desfaz um preço mais recente.
+3. Notifica só o que mudou de valor:
+   - versão parcial: só os produtos alterados;
+   - cópia completa com os mesmos preços: nada;
+   - reajuste geral: um e-mail com o CSV de 60 mil linhas (cerca de 3 MB).
+4. Grava a foto, as versões processadas e o histórico numa única transação. Se o envio do e-mail falhar, nada é gravado e o ciclo seguinte refaz e reenvia.
+
+A autenticação no Sankhya é feita em `POST {SANKHYA_BASE_URL}/authenticate` (OAuth 2.0 `client_credentials` mais o `X-Token`), e as consultas usam `DbExplorerSP.executeQuery` com paginação `OFFSET/FETCH`.
 
 ### O e-mail
 
@@ -28,7 +39,9 @@ A primeira execução só cria a foto inicial e não envia nada.
 | vazia | SQLite local em `dados/precos.db` |
 
 As tabelas são criadas automaticamente:
-- `precos`: a foto atual.
+- `precos`: preço vigente de cada produto, com o `NUTAB` e o `DTVIGOR` de origem.
+- `versoes_processadas`: versões da tabela já aplicadas.
+- `estado`: última carga completa, último commit do deploy e versão do esquema.
 - `historico`: todas as alterações detectadas.
 - `logs`: os logs de execução.
 
@@ -44,10 +57,14 @@ As tabelas são criadas automaticamente:
 | `SMTP_USUARIO` | Painel do Render | Conta que envia, ex.: `notificacoes@casacontente.com.br` |
 | `SMTP_SENHA` | Painel do Render | Senha de app da conta (veja abaixo) |
 | `EMAIL_REMETENTE` | Painel do Render | Opcional, ex.: `Monitor de Preços <notificacoes@casacontente.com.br>` |
-| `EMAIL_DESTINATARIOS` | **Só no painel do Render** | E-mails separados por vírgula |
+| `EMAIL_DESTINATARIOS` | **Só no painel do Render** | Separados por vírgula. Basta o usuário (`joao,maria`), e o domínio é completado; e-mail inteiro também vale (`ana@fornecedor.com.br`) |
+| `EMAIL_DEPLOY` | **Só no painel do Render** | Quem recebe o aviso de cada deploy (ex.: `gti`) |
+| `EMAIL_DOMINIO` | Opcional | Domínio usado para completar os destinatários. Vazio = domínio do `SMTP_USUARIO` |
+| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Painel do Render | Opcional: avisos de execução no Telegram |
 | `DATABASE_URL` | Automático | Ligada ao Postgres pelo `render.yaml` |
 | `TZ` | `render.yaml` | `America/Belem` |
 | `MAX_ITENS_EMAIL` | `render.yaml` | Padrão `500` |
+| `CARGA_COMPLETA_HORAS` | `render.yaml` | Intervalo da reconciliação completa. Padrão `24`; `0` desliga (fica só no deploy) |
 | `LOG_DIAS_RETENCAO` | `render.yaml` | Padrão `90` |
 
 As variáveis marcadas como `sync: false` no `render.yaml` não têm valor no repositório. Os destinatários e as credenciais existem só no painel do Render, em **notifica-precos → Environment**. Para incluir ou tirar alguém da lista, edite `EMAIL_DESTINATARIOS` ali; não precisa mexer no código. A próxima execução do Cron Job já usa a lista nova.
@@ -59,6 +76,34 @@ As variáveis marcadas como `sync: false` no `render.yaml` não têm valor no re
 3. Se a opção não aparecer, o administrador do Workspace precisa permitir senhas de app (Admin Console → Segurança).
 
 O limite do Gmail é de 2.000 e-mails por dia por conta. O monitor envia no máximo um e-mail a cada 5 minutos (288 por dia), e só quando há alteração.
+
+## Aviso de deploy
+
+Na primeira execução depois de cada deploy no Render (o script compara o `RENDER_GIT_COMMIT` com o último avisado), sai um aviso **uma única vez por commit**:
+- **E-mail para `EMAIL_DEPLOY`** com o resultado (sucesso ou falha da primeira execução, com o erro), o serviço, a branch, o commit com link para o GitHub e a configuração ativa: tabelas monitoradas, destinatários de preços, intervalo da reconciliação e Telegram.
+- **Mensagem 🚀 no Telegram** com o mesmo resumo e se o e-mail de deploy foi entregue.
+
+Se a primeira execução falhar, os erros seguintes do mesmo tipo não geram aviso novo; quando voltar a funcionar, chega o "voltou a funcionar". Rodando localmente, sem `RENDER_GIT_COMMIT`, não há aviso de deploy.
+
+## Avisos no Telegram
+
+Opcionais: sem `TELEGRAM_BOT_TOKEN` e `TELEGRAM_CHAT_ID`, nada é enviado. Para não avisar a cada 5 minutos, só os eventos relevantes geram mensagem:
+
+| Evento | Aviso |
+|---|---|
+| Ciclo sem versão nova ou sem alteração | nenhum |
+| Preço alterado (e-mail enviado) | ✅ quantidade de alterações, NUTAB e destinatários |
+| Deploy | 🚀 resultado da primeira execução (veja *Aviso de deploy*) |
+| Carga completa (reconciliação diária, `--carga-completa`) | 🔄 motivo, total de preços e alterações |
+| Erro | ❌ só o **primeiro** de cada tipo. Com o Sankhya fora por horas, chega um aviso, não um a cada 5 minutos |
+| Volta a funcionar depois de um erro | ✅ "voltou a funcionar" |
+
+Para configurar:
+1. No Telegram, fale com o **@BotFather**, use `/newbot` e copie o token para `TELEGRAM_BOT_TOKEN`. Pode reaproveitar o bot do `envio-gfk`.
+2. Mande uma mensagem para o bot (ou adicione-o a um grupo) e abra `https://api.telegram.org/bot<TOKEN>/getUpdates`. O `chat.id` que aparece vai em `TELEGRAM_CHAT_ID` (em grupos ele é negativo).
+3. Teste com `python main.py --testar-telegram`.
+
+Uma falha no Telegram só é registrada no log e nunca interrompe o monitor nem o envio do e-mail.
 
 ## Hospedagem no Render
 
@@ -86,6 +131,8 @@ Credenciais de sandbox do Sankhya só funcionam com o token de sandbox, e as de 
 ```bash
 .venv/bin/python main.py --testar-email   # envia um e-mail de teste aos destinatários
 .venv/bin/python main.py                  # roda um ciclo (é o que o Cron Job do Render executa)
+.venv/bin/python main.py --testar-telegram # envia um aviso de teste no Telegram
+.venv/bin/python main.py --carga-completa # recalcula todos os preços e compara com o banco
 .venv/bin/python main.py --loop           # fica rodando a cada INTERVALO_MINUTOS (servidor próprio / Background Worker)
 ```
 
@@ -96,7 +143,7 @@ Para testar o e-mail no próprio Render: **notifica-precos → Trigger Run** rod
 ## Logs e histórico
 
 - **Console:** aparece em *Logs* no painel do Render, que guarda 7 dias no plano Hobby.
-- **Tabela `logs`:** guarda os registros de nível INFO para cima, inclusive os erros com traceback, por `LOG_DIAS_RETENCAO` dias. Cada preço alterado vira uma linha `ALTERACAO ...`.
+- **Tabela `logs`:** guarda os registros de nível INFO para cima, inclusive os erros com traceback, por `LOG_DIAS_RETENCAO` dias. Cada preço alterado vira uma linha `ALTERACAO ...`. Acima de 200 alterações num ciclo, o log registra só o total, e o detalhe fica no `historico` e no CSV.
 - **Tabela `historico`:** registro permanente de todas as alterações, com a coluna `notificado`.
 
 Para consultar, use a *External Database URL* do Postgres (aba *Connect* no Render):
@@ -111,4 +158,5 @@ psql "$DATABASE_URL" -c "SELECT criado_em, nivel, mensagem FROM logs WHERE nivel
 - `SANKHYA_CODTABS`: quais tabelas de preço monitorar.
 - `MAX_ITENS_EMAIL`: quantos itens aparecem na tabela do corpo. O CSV anexo sempre tem todos.
 - `TZ`: fuso dos horários no e-mail e nos logs (o servidor do Render roda em UTC).
-- Para mudar o que é monitorado, edite `sql/precos_venda.sql`, mantendo o `ORDER BY` determinístico.
+- Para mudar o que é monitorado, edite os arquivos em `sql/`, mantendo o `ORDER BY` determinístico (a paginação depende dele).
+- Na primeira versão do projeto a foto guardava só a última versão da tabela. Ao subir esta versão, o banco é migrado sozinho: a foto antiga é descartada e refeita numa carga completa, sem notificar.

@@ -11,11 +11,20 @@ from .config import RAIZ
 
 ARQUIVO_SQLITE = RAIZ / "dados" / "precos.db"
 
+# Versão 2: a foto passou a guardar o preço vigente por produto (com DTVIGOR) em vez de só a
+# última versão da tabela. A foto antiga não serve para comparar e é refeita numa carga completa.
+VERSAO_ESQUEMA = "2"
+
+DDL_ESTADO = "CREATE TABLE IF NOT EXISTS estado (chave TEXT PRIMARY KEY, valor TEXT)"
+
 DDL_POSTGRES = """
 CREATE TABLE IF NOT EXISTS precos (
     codtab INTEGER, codprod BIGINT, codlocal BIGINT, controle TEXT,
-    nutab BIGINT, descrprod TEXT, vlrvenda DOUBLE PRECISION,
+    nutab BIGINT, dtvigor TEXT, descrprod TEXT, vlrvenda DOUBLE PRECISION,
     PRIMARY KEY (codtab, codprod, codlocal, controle)
+);
+CREATE TABLE IF NOT EXISTS versoes_processadas (
+    nutab BIGINT PRIMARY KEY, codtab INTEGER, dtvigor TEXT, processada_em TIMESTAMPTZ
 );
 CREATE TABLE IF NOT EXISTS historico (
     id BIGSERIAL PRIMARY KEY,
@@ -33,8 +42,11 @@ CREATE INDEX IF NOT EXISTS logs_criado_em ON logs (criado_em);
 DDL_SQLITE = """
 CREATE TABLE IF NOT EXISTS precos (
     codtab INTEGER, codprod INTEGER, codlocal INTEGER, controle TEXT,
-    nutab INTEGER, descrprod TEXT, vlrvenda REAL,
+    nutab INTEGER, dtvigor TEXT, descrprod TEXT, vlrvenda REAL,
     PRIMARY KEY (codtab, codprod, codlocal, controle)
+);
+CREATE TABLE IF NOT EXISTS versoes_processadas (
+    nutab INTEGER PRIMARY KEY, codtab INTEGER, dtvigor TEXT, processada_em TEXT
 );
 CREATE TABLE IF NOT EXISTS historico (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -81,10 +93,26 @@ class Banco:
 
     def criar_tabelas(self) -> None:
         self._garantir_conexao()
+        self.conn.execute(DDL_ESTADO)
+        if self.obter_estado("esquema") != VERSAO_ESQUEMA:
+            self.conn.execute("DROP TABLE IF EXISTS precos")
+            self.conn.execute("DROP TABLE IF EXISTS versoes_processadas")
         if self.postgres:
             self.conn.execute(DDL_POSTGRES)
         else:
             self.conn.executescript(DDL_SQLITE)
+        self.definir_estado("esquema", VERSAO_ESQUEMA)
+
+    def obter_estado(self, chave: str) -> str | None:
+        linha = self.execute("SELECT valor FROM estado WHERE chave = ?", (chave,)).fetchone()
+        return linha[0] if linha else None
+
+    def definir_estado(self, chave: str, valor: str) -> None:
+        self.execute(
+            "INSERT INTO estado (chave, valor) VALUES (?, ?)"
+            " ON CONFLICT (chave) DO UPDATE SET valor = excluded.valor",
+            (chave, valor),
+        )
 
     def execute(self, sql: str, params: tuple = ()):
         self._garantir_conexao()

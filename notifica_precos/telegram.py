@@ -1,0 +1,47 @@
+"""Avisos de execução no Telegram (sucesso relevante, erro e recuperação).
+
+Falhas no Telegram só são logadas: o aviso é secundário e não pode interromper o monitor.
+"""
+
+import logging
+from html import escape
+
+import requests
+
+from .config import Config
+
+log = logging.getLogger(__name__)
+
+TIMEOUT = 15
+LIMITE_TEXTO = 4096
+
+
+def enviar(config: Config, texto: str) -> bool:
+    if not config.telegram_configurado:
+        return False
+    try:
+        resp = requests.post(
+            f"https://api.telegram.org/bot{config.telegram_bot_token}/sendMessage",
+            json={
+                "chat_id": config.telegram_chat_id,
+                "text": texto[:LIMITE_TEXTO],
+                "parse_mode": "HTML",
+                "disable_web_page_preview": True,
+            },
+            timeout=TIMEOUT,
+        )
+        if resp.status_code != 200:
+            log.error("Falha ao avisar no Telegram (%s): %s", resp.status_code, resp.text[:300])
+            return False
+        return True
+    except requests.RequestException as erro:
+        log.error("Falha ao avisar no Telegram: %s", erro)
+        return False
+
+
+def titulo(icone: str, texto: str) -> str:
+    return f"{icone} <b>Monitor de preços</b> · {escape(texto)}"
+
+
+def bloco_erro(erro: BaseException) -> str:
+    return f"<code>{escape(type(erro).__name__)}: {escape(str(erro))[:1500]}</code>"
