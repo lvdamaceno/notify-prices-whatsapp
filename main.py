@@ -37,6 +37,10 @@ LOTE_VERSOES = 20
 PRIMEIRA_CARGA = "primeira carga"
 RECONCILIACAO_DIARIA = "reconciliação diária"
 
+# Valor de `promocoes_carregadas` no estado. Mudar refaz a primeira leitura das promoções, sem aviso.
+# Versão 2: só produtos de revenda (USOPROD = 'R'); sem isso as promoções dos demais iriam como "fim".
+LEITURA_PROMOCOES = "2"
+
 _parar = False
 
 
@@ -118,8 +122,8 @@ def verificar_promocoes(config: cfg.Config, sankhya: Sankhya, snapshot: Snapshot
     atuais = promocoes.calcular(sankhya.promocoes_vigentes(), precos)
     anteriores = promocoes.carregar(snapshot.banco)
 
-    if snapshot.estado("promocoes_carregadas") != "1":
-        promocoes.salvar(snapshot.banco, atuais, [], False, {"promocoes_carregadas": "1"})
+    if snapshot.estado("promocoes_carregadas") != LEITURA_PROMOCOES:
+        promocoes.salvar(snapshot.banco, atuais, [], False, {"promocoes_carregadas": LEITURA_PROMOCOES})
         log.info("Promoções: primeira leitura, %d preço(s) em promoção gravados sem aviso", len(atuais))
         resumo.promocoes_carregadas = len(atuais)
         return

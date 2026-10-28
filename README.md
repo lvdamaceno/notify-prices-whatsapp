@@ -8,7 +8,7 @@ Verifica no Sankhya, a cada minuto, se algum preço de venda mudou e avisa por *
 
 No Sankhya a tabela de preço (sempre a `CODTAB` 0) é **recriada a cada atualização**: cada vez que alguém muda um preço nasce uma nova versão (`NUTAB` na `TGFTAB`). Essa versão pode trazer **só os produtos alterados** ou **uma cópia de todos**. Então o preço vigente de um produto é o da versão mais recente (maior `DTVIGOR` já em vigor, com desempate pelo `NUTAB`) **que contém aquele produto**. O banco guarda essa foto completa, com cerca de 60 mil preços, e o script trabalha de dois jeitos:
 
-**Primeira carga** (`sql/codigos_produtos.sql` + `sql/precos_produtos.sql`) busca os códigos de todos os produtos ativos e, em lotes de `CARGA_LOTE_PRODUTOS` (padrão 500), pega o preço da versão mais recente que contém cada produto. Assim nenhum produto fica de fora, mesmo que não esteja na última cópia completa. Ela não notifica nada e:
+**Primeira carga** (`sql/codigos_produtos.sql` + `sql/precos_produtos.sql`) busca os códigos de todos os produtos ativos de revenda (`USOPROD = 'R'`) e, em lotes de `CARGA_LOTE_PRODUTOS` (padrão 500), pega o preço da versão mais recente que contém cada produto. Assim nenhum produto fica de fora, mesmo que não esteja na última cópia completa. Ela não notifica nada e:
 - mostra o andamento no log a cada lote: `lote 12/121 · produtos 5501 a 6000 · 6000/60099 produtos (10.0%) · 1m20s decorridos · ~12m00s restantes`;
 - salva cada lote à medida que termina. Se a execução cair no meio (timeout, Sankhya fora), a próxima continua do último produto concluído;
 - usa uma trava no Postgres (`pg_try_advisory_lock`), garantindo uma execução por vez também em execuções manuais (o próprio Render já adia a próxima execução do cron enquanto uma está ativa).
