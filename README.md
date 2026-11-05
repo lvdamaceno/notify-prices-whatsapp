@@ -70,8 +70,9 @@ As tabelas são criadas automaticamente:
 
 | Variável | Onde definir | Descrição |
 |---|---|---|
-| `SANKHYA_CLIENT_ID`, `SANKHYA_CLIENT_SECRET` | Painel do Render | Área do Desenvolvedor do Sankhya |
-| `SANKHYA_X_TOKEN` | Painel do Render | Tela **Configurações Gateway** do Sankhya Om |
+| `SANKHYA_PROXY_URL`, `SANKHYA_PROXY_CHAVE` | Painel do Render | Conexão central (`sankhya-central`). Com elas, as consultas passam pela central e as credenciais abaixo são dispensadas. Veja `docs/CONECTAR.md` no repositório `sankhya-central` |
+| `SANKHYA_CLIENT_ID`, `SANKHYA_CLIENT_SECRET` | Painel do Render | Área do Desenvolvedor do Sankhya (só sem a central, como ao rodar localmente) |
+| `SANKHYA_X_TOKEN` | Painel do Render | Tela **Configurações Gateway** do Sankhya Om (só sem a central) |
 | `SANKHYA_CODTABS` | Painel do Render | Tabelas de preço monitoradas (ex.: `0,5`). Vazio monitora todas |
 | `SMTP_HOST` | Painel do Render | `smtp.gmail.com` |
 | `SMTP_PORTA` | `render.yaml` | `587` (STARTTLS) ou `465` (SSL) |

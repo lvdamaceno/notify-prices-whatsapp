@@ -10,6 +10,8 @@ from .config import RAIZ, Config
 log = logging.getLogger(__name__)
 
 TAMANHO_PAGINA = 4000
+# Uma chamada à central pode esperar até 120 s na fila e mais 60 s no Sankhya.
+TEMPO_LIMITE_CENTRAL = 200
 
 
 class SankhyaErro(RuntimeError):
@@ -46,7 +48,23 @@ class Sankhya:
         log.info("Token Sankhya gerado (expira em %ss)", dados.get("expires_in"))
         return self._token
 
-    def _executar_sql(self, sql: str) -> tuple[list[str], list[list]]:
+    def _pela_central(self, sql: str, rotulo: str | None) -> dict:
+        """Consulta pela conexão central (sankhya-central), que cuida do token, da fila e dos limites."""
+        resp = requests.post(
+            f"{self.config.sankhya_proxy_url}/servico",
+            headers={"x-proxy-chave": self.config.sankhya_proxy_chave},
+            json={"nome": "DbExplorerSP.executeQuery", "corpo": {"sql": sql}, "rotulo": rotulo},
+            timeout=max(self.config.sankhya_timeout, TEMPO_LIMITE_CENTRAL),
+        )
+        try:
+            corpo = resp.json()
+        except ValueError:
+            corpo = {}
+        if not resp.ok:
+            raise SankhyaErro(f"Conexão central ({resp.status_code}): {corpo.get('erro') or resp.text[:300]}")
+        return corpo["d"]
+
+    def _direto(self, sql: str) -> dict:
         resp = requests.post(
             f"{self.config.sankhya_base_url}/gateway/v1/mge/service.sbr",
             params={"serviceName": "DbExplorerSP.executeQuery", "outputType": "json"},
@@ -58,8 +76,10 @@ class Sankhya:
             # Token invalidado antes do previsto: força nova autenticação na próxima chamada.
             self._token = ""
         resp.raise_for_status()
+        return resp.json()
 
-        dados = resp.json()
+    def _executar_sql(self, sql: str, rotulo: str | None = None) -> tuple[list[str], list[list]]:
+        dados = self._pela_central(sql, rotulo) if self.config.sankhya_proxy_url else self._direto(sql)
         if str(dados.get("status")) != "1":
             raise SankhyaErro(f"Erro na consulta: {dados.get('statusMessage') or dados}")
 
@@ -70,16 +90,16 @@ class Sankhya:
         colunas = [c["name"] for c in corpo.get("fieldsMetadata", [])]
         return colunas, corpo.get("rows", [])
 
-    def consultar(self, sql: str, paginar: bool = True) -> list[dict]:
+    def consultar(self, sql: str, paginar: bool = True, rotulo: str | None = None) -> list[dict]:
         """Executa o SQL paginando com OFFSET/FETCH até a última página."""
         if not paginar:  # resultados pequenos (contagens), sem ORDER BY
-            colunas, linhas = self._executar_sql(sql)
+            colunas, linhas = self._executar_sql(sql, rotulo)
             return [dict(zip(colunas, linha)) for linha in linhas]
         registros: list[dict] = []
         offset = 0
         while True:
             pagina = f"{sql}\nOFFSET {offset} ROWS FETCH NEXT {TAMANHO_PAGINA} ROWS ONLY"
-            colunas, linhas = self._executar_sql(pagina)
+            colunas, linhas = self._executar_sql(pagina, rotulo)
             registros.extend(dict(zip(colunas, linha)) for linha in linhas)
             if len(linhas) < TAMANHO_PAGINA:
                 return registros
@@ -101,28 +121,28 @@ class Sankhya:
 
     def codigos_produtos(self) -> list[int]:
         """Códigos de todos os produtos ativos, em ordem."""
-        return [int(r["CODPROD"]) for r in self.consultar(self._sql("codigos_produtos.sql"))]
+        return [int(r["CODPROD"]) for r in self.consultar(self._sql("codigos_produtos.sql"), rotulo="codigos_produtos")]
 
     def precos_produtos(self, codprods: list[int]) -> list[dict]:
         """Preço vigente de um lote de produtos (primeira carga)."""
-        return self.consultar(self._sql("precos_produtos.sql", codprods=codprods))
+        return self.consultar(self._sql("precos_produtos.sql", codprods=codprods), rotulo="precos_produtos")
 
     def produtos_ativos(self) -> int:
-        return int(self.consultar(self._sql("produtos_ativos.sql"), paginar=False)[0]["QTD"])
+        return int(self.consultar(self._sql("produtos_ativos.sql"), paginar=False, rotulo="produtos_ativos")[0]["QTD"])
 
     def copias_completas(self, nutabs: list[int], limite: int) -> dict[int, int]:
         """Das versões informadas, as que têm pelo menos `limite` itens: {NUTAB: quantidade}."""
-        linhas = self.consultar(self._sql("copias_completas.sql", nutabs=nutabs, limite=limite))
+        linhas = self.consultar(self._sql("copias_completas.sql", nutabs=nutabs, limite=limite), rotulo="copias_completas")
         return {int(l["NUTAB"]): int(l["QTD"]) for l in linhas}
 
     def versoes_tabela(self) -> list[dict]:
         """Versões (NUTAB) já em vigor das tabelas monitoradas."""
-        return self.consultar(self._sql("versoes_tabela.sql"))
+        return self.consultar(self._sql("versoes_tabela.sql"), rotulo="versoes_tabela")
 
     def precos_versao(self, nutab: int) -> list[dict]:
         """Preços contidos em uma versão específica da tabela."""
-        return self.consultar(self._sql("precos_versao.sql", nutab=nutab))
+        return self.consultar(self._sql("precos_versao.sql", nutab=nutab), rotulo="precos_versao")
 
     def promocoes_vigentes(self) -> list[dict]:
         """Promoções da TGFDES em vigor hoje, uma linha por produto (inclui as por grupo de desconto)."""
-        return self.consultar(self._sql("promocoes_vigentes.sql"))
+        return self.consultar(self._sql("promocoes_vigentes.sql"), rotulo="promocoes_vigentes")

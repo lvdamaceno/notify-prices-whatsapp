@@ -23,6 +23,15 @@ def _obrigatoria(nome: str) -> str:
     return valor
 
 
+def _credencial(nome: str) -> str:
+    """Obrigatória só sem a conexão central."""
+    return os.getenv(nome, "") if os.getenv("SANKHYA_PROXY_URL") else _obrigatoria(nome)
+
+
+def _proxy_chave() -> str:
+    return _obrigatoria("SANKHYA_PROXY_CHAVE") if os.getenv("SANKHYA_PROXY_URL") else ""
+
+
 def _lista(valor: str) -> list[str]:
     return [v.strip() for v in valor.replace(";", ",").split(",") if v.strip()]
 
@@ -64,6 +73,8 @@ class Config:
     sankhya_x_token: str
     sankhya_codtabs: list[int]
     sankhya_timeout: int
+    sankhya_proxy_url: str
+    sankhya_proxy_chave: str
 
     smtp_host: str
     smtp_porta: int
@@ -105,9 +116,12 @@ def carregar() -> Config:
     dominio = os.getenv("EMAIL_DOMINIO", "").strip().lstrip("@") or smtp_usuario.rpartition("@")[2]
     return Config(
         sankhya_base_url=os.getenv("SANKHYA_BASE_URL", "https://api.sankhya.com.br").rstrip("/"),
-        sankhya_client_id=_obrigatoria("SANKHYA_CLIENT_ID"),
-        sankhya_client_secret=_obrigatoria("SANKHYA_CLIENT_SECRET"),
-        sankhya_x_token=_obrigatoria("SANKHYA_X_TOKEN"),
+        # Com a conexão central, as credenciais do Sankhya ficam só nela.
+        sankhya_client_id=_credencial("SANKHYA_CLIENT_ID"),
+        sankhya_client_secret=_credencial("SANKHYA_CLIENT_SECRET"),
+        sankhya_x_token=_credencial("SANKHYA_X_TOKEN"),
+        sankhya_proxy_url=os.getenv("SANKHYA_PROXY_URL", "").rstrip("/"),
+        sankhya_proxy_chave=_proxy_chave(),
         sankhya_codtabs=_codtabs(os.getenv("SANKHYA_CODTABS", "")),
         # Segundos de espera por resposta de cada consulta ao Sankhya.
         sankhya_timeout=int(os.getenv("SANKHYA_TIMEOUT", "120")),

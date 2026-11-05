@@ -20,6 +20,10 @@ services:
           property: connectionString
       - key: SANKHYA_BASE_URL
         value: https://api.sankhya.com.br
+      - key: SANKHYA_PROXY_URL
+        value: http://sankhya-central:10000
+      - key: SANKHYA_PROXY_CHAVE
+        sync: false
       - key: SANKHYA_CLIENT_ID
         sync: false
       - key: SANKHYA_CLIENT_SECRET
